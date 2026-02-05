@@ -15,29 +15,18 @@ A collection of benchmarks for collaborative learning.
 
 ## Install
 
-Dependencies are managed externally (e.g., module environments on HPC).
-Install the package without pulling dependencies:
+Recommended (matches the benchmark launch flow): create the conda env from `environment.yml`.
 ```bash
 git clone https://github.com/hcherkaoui/lin-dyn-transfert
 cd lin-dyn-transfert
-python -m pip install -e . --no-deps
+conda env create -f environment.yml
+conda activate dyntr
+python -m pip install -e .
 ```
 
 ## Testing
 
-```bash
-pytest --cov=dyntr --cov-report=term-missing --cov-report=xml --cov-fail-under=70
-```
-
-## Benchmarks
-
-Jean Zay usage is documented in `benchmark/bench_00_usage_for_slurm.md`.
-
-Optional:
-- Enable Weights & Biases logging with `--wandb` (requires `wandb` auth). By default, logging is disabled.
-- `pdftk` is required to merge PDFs into `_merge_figures/`.
-
-Outputs are written to `_cache/`, `_figures/`, and `_merge_figures/` (all ignored by git).
+Use `flake8` and `pytest`.
 
 ## Citation
 
