@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . --no-deps
+          python -m pip install numpy numba pandas joblib scikit-learn seaborn matplotlib
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install pytest pytest-cov
+      - name: Run tests with coverage
+        env:
+          MPLBACKEND: Agg
+        run: |
+          pytest --cov=dyntr --cov-report=term-missing --cov-report=xml --cov-fail-under=70
+      - name: Benchmark smoke
+        env:
+          MPLBACKEND: Agg
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          NUMEXPR_NUM_THREADS: "1"
+        run: |
+          python -m benchmark.bench_1_delta_illustration_synthetic_data --eps 0.1 -n_t 50 -n_s 100 --joblib-verbose 0
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  flake8:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install flake8
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flake8
+      - name: Lint
+        run: |
+          flake8 --ignore=E501,W503 --count dyntr benchmark datasets
+
+  code-lines:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cloc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cloc
+      - name: Code line counts
+        run: |
+          cloc dyntr benchmark datasets
+
+  benchmarks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . --no-deps
+          python -m pip install numpy numba pandas joblib scikit-learn seaborn matplotlib
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Run benchmark smoke
+        env:
+          MPLBACKEND: Agg
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          NUMEXPR_NUM_THREADS: "1"
+        run: |
+          python -m benchmark.bench_1_delta_illustration_synthetic_data --eps 0.1 -n_t 50 -n_s 100 --joblib-verbose 0

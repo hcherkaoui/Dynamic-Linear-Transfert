@@ -1,0 +1,18 @@
+ignore:
+  - "agoralearn/info.py"
+  - "agoralearn/benchmark_federated_learning/tests/"
+  - "agoralearn/benchmark_gradient_augmentation/tests/"
+
+flag_management:
+  individual_flags:
+    - name: smart-tests
+      carryforward: true
+      carryforward_mode: "labels"
+      statuses:
+        - type: "project"
+        - type: "patch"
+
+cli:
+  plugins:
+    pycoverage:
+      report_type: "json"

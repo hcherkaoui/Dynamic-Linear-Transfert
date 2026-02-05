@@ -1,0 +1,58 @@
+# ignore compiled files of any sort
+*.pyc
+*.c
+*~
+.#*
+*.swp
+*.swo
+*.profile
+
+# ignore coverage report file
+.coverage
+coverage.xml
+
+
+# ignore cache dirs
+.cache/
+__cache__/
+_cache/
+.pytest_cache/
+__pycache__/
+.cachedir/
+.ipynb_checkpoints/
+
+# ignore data dirs
+cifar/
+data/
+_data/
+stl10/
+
+# ignore compiled dirs
+build/
+_build/
+
+# ignore figure dirs
+figures/
+_figures/
+_merge_figure/
+_merge_figures/
+
+# ignore specific dirs
+dist/
+docs/
+.DS_Store/
+auto_examples/
+_autosummary/
+generated/
+modules/
+dyntr.egg-info/
+
+# ignore example result files
+*.png
+*.pdf
+
+# ignore all type of archived/zipped files
+*.zip
+*.nt.bz2
+*.tar.gz
+*.tgz
