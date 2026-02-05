@@ -1,6 +1,6 @@
 [![Python Versions](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/hcherkaoui/Dynamic-Linear-Transfert/actions/workflows/ci.yml/badge.svg)](https://github.com/hcherkaoui/Dynamic-Linear-Transfert/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/hcherkaoui/Dynamic-Linear-Transfert/graph/badge.svg)](https://codecov.io/gh/hcherkaoui/Dynamic-Linear-Transfert)
+[![codecov](https://codecov.io/gh/hcherkaoui/Dynamic-Linear-Transfert/graph/badge.svg?token=NIduUWTCXT)](https://codecov.io/gh/hcherkaoui/Dynamic-Linear-Transfert)
 ![maintenance-status](https://img.shields.io/badge/maintenance-passively--maintained-yellowgreen.svg)
 ![Lines of Code](badges/loc.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
