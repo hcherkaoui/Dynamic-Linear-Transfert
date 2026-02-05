@@ -5,7 +5,7 @@
 ![Lines of Code](badges/loc.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-# DynTR
+# DynTr
 
 A collection of benchmarks for collaborative learning.
 
