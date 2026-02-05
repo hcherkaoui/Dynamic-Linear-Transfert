@@ -1,3 +1,5 @@
+"""Statistics test coverage for dyntr.statistics."""
+
 import numpy as np
 
 from dyntr.statistics import compute_delta, compute_delta_variance, compute_delta_lower_bound, opt_lambda

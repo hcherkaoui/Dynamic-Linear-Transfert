@@ -21,6 +21,7 @@ def load_version():
 
 
 def is_installing():
+    """Return the set of install/develop commands found in argv."""
     install_commands = set(["install", "develop"])
     return install_commands.intersection(set(sys.argv))
 

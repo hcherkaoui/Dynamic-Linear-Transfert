@@ -1,3 +1,5 @@
+"""Regression test coverage for dyntr.regression."""
+
 import numpy as np
 import pytest
 

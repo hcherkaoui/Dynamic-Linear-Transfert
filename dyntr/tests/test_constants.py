@@ -1,3 +1,5 @@
+"""Tests for dyntr.constants."""
+
 from dyntr import constants
 
 
