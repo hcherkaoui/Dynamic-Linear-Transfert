@@ -274,6 +274,7 @@ def regression(
     alpha: float,
     mode: str,
 ) -> Tuple[np.ndarray, int, int]:
+    """Dispatch regression modes and return (theta, n_t, n_s)."""
     if mode == "target":
         return _ridge(X_t, y_t, lbda_t), len(X_t), 0
 

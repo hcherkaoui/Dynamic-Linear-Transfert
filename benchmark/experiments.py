@@ -115,7 +115,7 @@ def run_one_delta_illustration(
 
         # Empirical: test-feature risk vs theta (not using y_test noise)
         Delta_emp = float(np.linalg.norm(X_t_test @ (theta_t_hat - theta_t))**2
-                          - np.linalg.norm(X_t_test @ (theta_c_hat - theta_t))**2)
+                          - np.linalg.norm(X_t_test @ (theta_c_hat - theta_t))**2)  # noqa
 
         l_Delta_hat.append(Delta_hat)
         l_Delta_emp.append(Delta_emp)
@@ -314,8 +314,8 @@ def run_one_epsilon_influence(
         l_n.append(augmenter.get_n_selected())
 
         error_diff.append(
-            np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)
-            - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)
+            np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)  # noqa
+            - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)  # noqa
         )
 
     return [
@@ -379,8 +379,8 @@ def run_one_sigma_influence(
         l_n.append(augmenter.get_n_selected())
 
         error_diff.append(
-            np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)
-            - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)
+            np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)  # noqa
+            - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)  # noqa
         )
 
     return [
@@ -459,8 +459,8 @@ def run_one_lbda_influence(
         l_n.append(augmenter.get_n_selected())
 
         error_diff.append(
-            np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)
-            - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)
+            np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)  # noqa
+            - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)  # noqa
         )
 
     return [

@@ -238,8 +238,8 @@ class OracleGreedySampleAugmenter(BaseEstimator, TransformerMixin):
             Kc = Kc - np.outer(Kcx, Kcx) / kappac
 
             deltas[i] = float(
-                np.dot(self.X_t_val_ @ (theta_t_hat - theta_t_star), self.X_t_val_ @ (theta_t_hat - theta_t_star))
-                - np.dot(self.X_t_val_ @ (theta_c - theta_t_star), self.X_t_val_ @ (theta_c - theta_t_star))
+                np.dot(self.X_t_val_ @ (theta_t_hat - theta_t_star), self.X_t_val_ @ (theta_t_hat - theta_t_star))  # noqa
+                - np.dot(self.X_t_val_ @ (theta_c - theta_t_star), self.X_t_val_ @ (theta_c - theta_t_star))  # noqa
             )
 
         idx_max = int(np.argmax(deltas))

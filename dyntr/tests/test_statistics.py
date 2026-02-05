@@ -11,6 +11,7 @@ def _make_linear_data(rng, n, d, sigma):
 
 
 def test_compute_delta_and_variance_are_finite():
+    """Compute-delta helpers should return finite values."""
     rng = np.random.default_rng(0)
     d = 3
     X_t, y_t, theta_t = _make_linear_data(rng, n=12, d=d, sigma=0.1)
@@ -77,6 +78,7 @@ def test_compute_delta_and_variance_are_finite():
 
 
 def test_opt_lambda_returns_value_in_grid():
+    """opt_lambda should return a value from the provided grid."""
     rng = np.random.default_rng(1)
     d = 4
     X, y, _ = _make_linear_data(rng, n=20, d=d, sigma=0.1)

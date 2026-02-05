@@ -1,0 +1,34 @@
+name: Lines of Code Badge
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  loc-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate LoC badge
+        uses: shadowmoose/GHA-LoC-Badge@1.0.0
+        with:
+          directory: ./
+          badge: ./badges/loc.svg
+          ignore: 'dyntr.egg-info|_cache|_figures|_merge_figures|badges|.git|__pycache__|.pytest_cache|.mypy_cache|.ruff_cache|.venv'
+
+      - name: Commit badge
+        run: |
+          if git diff --quiet -- badges/loc.svg; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add badges/loc.svg
+          git commit -m "CI update lines-of-code badge"
+          git push

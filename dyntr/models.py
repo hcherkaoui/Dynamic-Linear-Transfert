@@ -18,6 +18,7 @@ class SimpleCIFARCNN(nn.Module):
         )
 
     def forward(self, x):
+        """Forward pass."""
         return self.net(x)
 
 
@@ -33,4 +34,5 @@ class SimpleMLP(nn.Module):
         )
 
     def forward(self, x):
+        """Forward pass."""
         return self.net(x)

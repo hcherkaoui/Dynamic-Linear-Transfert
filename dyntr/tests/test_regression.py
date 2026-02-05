@@ -31,6 +31,7 @@ def _assert_theta(theta, d):
 
 
 def test_regression_modes_run():
+    """Smoke-test all regression modes."""
     rng = np.random.default_rng(0)
     theta_t, theta_s, X_t, X_s, y_t, y_s, X_t_val = _make_pair_data(rng)
     d = X_t.shape[1]
@@ -188,6 +189,7 @@ def test_regression_modes_run():
 
 
 def test_regression_unknown_mode_raises():
+    """Unknown regression mode should raise."""
     rng = np.random.default_rng(0)
     theta_t, _, X_t, X_s, y_t, y_s, X_t_val = _make_pair_data(rng)
 
