@@ -68,6 +68,9 @@ run "Install requirements" python3.11 -m pip install -r "$repo_root/requirements
 run "Editable install (pip -e .)" python3.11 -m pip install -e "$repo_root"
 run "Ensure joblib" python3.11 -m pip install -U joblib
 
+# --- Pre-download datasets ---------------------------------------------------
+run "Download California Housing dataset" python3.11 -c "from sklearn.datasets import fetch_california_housing; fetch_california_housing(); print('california_housing: ok')"
+
 # --- Sanity check ------------------------------------------------------------
 run "Sanity import" python3.11 -c "import dyntr, benchmark; print('dyntr:', dyntr.__file__)"
 info "${GREEN}${BOLD}Setup completed.${RESET}"
