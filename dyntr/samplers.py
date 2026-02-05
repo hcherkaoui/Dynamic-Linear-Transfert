@@ -287,37 +287,3 @@ def sample_weighted_sparsifier(
     w = np.sqrt(alpha, dtype=X.dtype)
 
     return idx, w
-
-
-def sample_with_weights(
-    X2: np.ndarray,
-    m: int,
-    sampler: str,
-    rng: np.random.Generator,
-) -> Tuple[np.ndarray, np.ndarray, str, dict]:
-    """Return indices and per-row weights appropriate for **Gram** reconstruction.
-
-    Returns
-    -------
-    indices : (m,)
-    weights : (m,)  (non-negative)
-    """
-    valid_samplers = ["uniform", "ridge", "greedy", "sparsifier"]
-
-    if sampler == "uniform":
-        idx, w = sample_uniform(X2, m, rng=rng)
-
-    elif sampler == "ridge":
-        idx, w = sample_ridge_leverage(X2, m, rng=rng)
-
-    elif sampler == "maxvol":
-        idx, w = sample_maxvol_greedy(X2, m, rng=rng)
-
-    elif sampler == "sparsifier":
-        idx, w = sample_weighted_sparsifier(X2, m, rng=rng)
-
-    else:
-        raise ValueError(f"sampler not understood, got '{sampler}';"
-                         f" valid values are {valid_samplers}")
-
-    return idx, w
