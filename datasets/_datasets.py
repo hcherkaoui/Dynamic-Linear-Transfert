@@ -88,39 +88,6 @@ def _condition_blocks(
     return X1_tr, X2_tr, X1_te, X2_te
 
 
-def _load_power_plant_dataset():
-    """
-    Load Combined Cycle Power Plant dataset from .xlsx format.
-
-    Returns
-    -------
-    train_data : tuple
-        ((X1_train, y1_train), (X2_train, y2_train))
-    test_data : tuple
-        ((X1_test, y1_test), (X2_test, y2_test))
-    """
-    filepath = os.path.join(DATA_DIR, 'data', 'ccpp', 'Folds5x2_pp.xlsx')
-    df = pd.read_excel(filepath)
-
-    df.columns = [col.strip() for col in df.columns]
-
-    X = df[['AT', 'AP', 'RH', 'V']].to_numpy(dtype=np.float64)
-    y = df['PE'].to_numpy(dtype=np.float64)
-
-    idx = len(X) // 2
-
-    X1_train, y1_train = X[:idx // 2], y[:idx // 2]
-    X2_train, y2_train = X[idx // 2:idx], y[idx // 2:idx]
-
-    X1_test, y1_test = X[idx:idx + (len(X) - idx) // 2], y[idx:idx + (len(y) - idx) // 2]
-    X2_test, y2_test = X[idx + (len(X) - idx) // 2:], y[idx + (len(y) - idx) // 2:]
-
-    train_data = (X1_train, y1_train), (X2_train, y2_train)
-    test_data = (X1_test, y1_test), (X2_test, y2_test)
-
-    return train_data, test_data
-
-
 def _load_wine_quality_dataset():
     """
     Load the UCI Wine Quality datasets.

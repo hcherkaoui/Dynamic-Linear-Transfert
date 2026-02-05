@@ -7,7 +7,7 @@ from typing import Tuple, Union, Optional, Dict, Any
 import numpy as np
 from numpy.typing import ArrayLike
 from ._datasets import _condition_blocks, _assert_is_regression
-from ._datasets import (_load_power_plant_dataset, _load_boston_dataset, _load_hillstrom_dataset,
+from ._datasets import (_load_boston_dataset, _load_hillstrom_dataset,
                         _load_open_ecommerce_dataset, _load_wine_quality_dataset)
 
 
@@ -177,16 +177,12 @@ def fetch_real_datasets(
 
     where each *_out is a 4-tuple: (X_t, X_s, y_t, y_s).
     """
-    valid_names = {"power", "boston", "email", "ecommerce", "wine"}
+    valid_names = {"boston", "email", "ecommerce", "wine"}
     if dataset_name not in valid_names:
         raise ValueError(f"Dataset '{dataset_name}' is not supported. "
                          f"Valid values: {sorted(valid_names)}")
 
-    if dataset_name == "power":
-        train_data, test_data = _load_power_plant_dataset()
-        add_intercept = True
-
-    elif dataset_name == "boston":
+    if dataset_name == "boston":
         train_data, test_data = _load_boston_dataset()
         add_intercept = True
 
