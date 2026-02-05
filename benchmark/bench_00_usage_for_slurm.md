@@ -2,11 +2,14 @@
 
 ## 1) One-time install (login node)
 ```bash
-module purge; module load pytorch-gpu/py3/2.2.0; bash bench_01_install_for_slurm.sh
+module purge
+export WORK=/lustre/fswork/projects/rech/jcx/uor49lv
+bash bench_01_install_for_slurm.sh
 ```
 
 ## 2) Submit the benchmark job (compute node via Slurm)
 ```bash
+export WORK=/lustre/fswork/projects/rech/jcx/uor49lv
 sbatch bench_02_run_all.slurm
 ```
 

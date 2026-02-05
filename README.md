@@ -1,7 +1,6 @@
 [![Python Versions](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/hcherkaoui/Dynamic-Linear-Transfert/actions/workflows/ci.yml/badge.svg)](https://github.com/hcherkaoui/Dynamic-Linear-Transfert/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/hcherkaoui/Dynamic-Linear-Transfert/graph/badge.svg)](https://codecov.io/gh/hcherkaoui/Dynamic-Linear-Transfert)
-[![flake8](https://github.com/hcherkaoui/Dynamic-Linear-Transfert/actions/workflows/flake8.yml/badge.svg?branch=main)](https://github.com/hcherkaoui/Dynamic-Linear-Transfert/actions/workflows/flake8.yml)
 ![maintenance-status](https://img.shields.io/badge/maintenance-passively--maintained-yellowgreen.svg)
 ![Lines of Code](badges/loc.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -16,12 +15,12 @@ A collection of benchmarks for collaborative learning.
 
 ## Install
 
+Dependencies are managed externally (e.g., module environments on HPC).
+Install the package without pulling dependencies:
 ```bash
 git clone https://github.com/hcherkaoui/lin-dyn-transfert
 cd lin-dyn-transfert
-conda env create -f environment.yml
-conda activate dyntr
-pip install -e .
+python -m pip install -e . --no-deps
 ```
 
 ## Testing
@@ -32,20 +31,7 @@ pytest --cov=dyntr --cov-report=term-missing --cov-report=xml --cov-fail-under=7
 
 ## Benchmarks
 
-Install benchmark dependencies:
-```bash
-pip install -e ".[bench]"
-```
-
-Run the benchmark suite:
-```bash
-bash benchmark/bench_0_run_all.sh
-```
-
-Run a quick smoke (1 epoch):
-```bash
-BENCH_EPOCHS=1 bash benchmark/bench_0_run_all.sh
-```
+Jean Zay usage is documented in `benchmark/bench_00_usage_for_slurm.md`.
 
 Optional:
 - Enable Weights & Biases logging with `--wandb` (requires `wandb` auth). By default, logging is disabled.

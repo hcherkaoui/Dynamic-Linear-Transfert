@@ -15,26 +15,38 @@
 
 set -euo pipefail
 
+# Use venv from $WORK and avoid user-site packages
+if [[ -z "${WORK:-}" ]]; then
+    echo "[error] WORK is not set; cannot locate venv." >&2
+    exit 1
+fi
+venv_dir="${WORK}/venvs/dyntr"
+if [[ ! -d "$venv_dir" ]]; then
+    echo "[error] venv not found at $venv_dir. Run bench_01_install_for_slurm.sh first." >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+source "$venv_dir/bin/activate"
+export PYTHONNOUSERSITE=1
+unset PYTHONPATH
+
+# Redirect dataset/cache storage to $WORK
+export SKLEARN_DATA="${WORK}/sklearn_data"
+export XDG_CACHE_HOME="${WORK}/.cache"
+mkdir -p "$SKLEARN_DATA" "$XDG_CACHE_HOME"
+
 # Avoid nested threading inside joblib workers
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
-# Load Jean Zay PyTorch module inside the job
-module purge
-module load pytorch-gpu/py3/2.2.0
-
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root_dir="$(cd "$script_dir/.." && pwd)"
 cd "$root_dir"
 
 # Check dependencies
-python -c "import torch; print('torch OK:', torch.__version__)" \
-  || { echo "[error] torch not found after module load"; exit 1; }
-python -c "import torchvision; print('torchvision OK:', torchvision.__version__)" \
-  || echo "[warn] torchvision not found in this module environment."
-python -c "import dyntr, joblib, matplotlib, numpy, numba, sklearn, pandas; print('bench deps OK')"
+python -c "import dyntr; print('dyntr OK')"
 
 ####################################################################################################
 # Main

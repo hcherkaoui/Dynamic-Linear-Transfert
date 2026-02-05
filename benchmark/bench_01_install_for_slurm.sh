@@ -2,24 +2,35 @@
 
 set -euo pipefail
 
-# 1) create isolated venv to avoid mixing user-site packages
-venv_dir="${HOME}/venvs/dyntr"
-python -m venv "$venv_dir"
-# shellcheck disable=SC1090
-source "$venv_dir/bin/activate"
+if [[ -z "${WORK:-}" ]]; then
+    echo "[error] WORK is not set; refusing to create venv under \$HOME." >&2
+    exit 1
+fi
 
-# avoid user-site leakage
+venv_dir="${WORK}/venvs/dyntr"
+if [[ ! -d "$venv_dir" ]]; then
+    python -m venv "$venv_dir"
+fi
+py="$venv_dir/bin/python"
+
 export PYTHONNOUSERSITE=1
 unset PYTHONPATH
 
-# 2) pip deps
-python -m pip install --upgrade --no-cache-dir pip setuptools wheel
+export SKLEARN_DATA="${WORK}/sklearn_data"
+export XDG_CACHE_HOME="${WORK}/.cache"
+mkdir -p "$SKLEARN_DATA" "$XDG_CACHE_HOME"
+
+# Install dyntr only; dependencies are managed externally
+"$py" -m pip install --upgrade --no-cache-dir pip setuptools wheel
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root_dir="$(cd "$script_dir/.." && pwd)"
 
-python -m pip install --no-cache-dir "numpy<2"
-python -m pip install --upgrade --no-cache-dir -e "$root_dir[bench]"
+"$py" -m pip uninstall -y dyntr >/dev/null 2>&1 || true
+# Force legacy setup.py install to avoid editable/PEP517 edge cases on HPC
+PIP_USE_PEP517=0 "$py" -m pip install --no-cache-dir --no-deps "$root_dir"
 
-python -c "import dyntr, joblib, matplotlib, numpy, numba, sklearn, pandas; print('bench deps OK')"
+"$py" -m pip show dyntr || { echo "[error] dyntr not found in venv." >&2; exit 1; }
+"$py" -c "import sys; print('python:', sys.executable)"
+"$py" -c "import dyntr; print('dyntr path:', dyntr.__file__)"
 
-echo "[done] dyntr installed in user site-packages."
+echo "[done] dyntr installed in $venv_dir"
