@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dyntr"
+version = "0.1.dev0"
+description = "DynTR: collaborative learning benchmarks"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "-" }
+authors = [{ name = "Hamza Cherkaoui", email = "hamza.cherkaoui@telecom-sudparis.eu" }]
+urls = { "Homepage" = "https://github.com/hcherkaoui/lin-dyn-transfert" }
+
+[tool.setuptools]
+packages = ["dyntr", "datasets", "benchmark"]
