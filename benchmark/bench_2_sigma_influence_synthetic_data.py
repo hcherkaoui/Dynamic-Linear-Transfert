@@ -7,11 +7,22 @@ import time
 import argparse
 from joblib import Parallel, delayed
 from dyntr.utils import format_duration, set_random_state
-from benchmark.experiments import run_one_sigma_influence
-from dyntr.plotting import plot_stats_evolution
-from dyntr.constants import (N_JOBS, N_RUNS, FONTSIZE, LW, ALPHA, FIGURES_DIR,
-                             SEED, LBDA_DEFAULT, D, L_SIGMA_S)
+from experiments import run_one_sigma_influence
+from plotting import plot_stats_evolution
+from config import get_config
 
+
+_CFG = get_config()
+N_JOBS = _CFG.N_JOBS
+N_RUNS = _CFG.N_RUNS
+FONTSIZE = _CFG.FONTSIZE
+LW = _CFG.LW
+ALPHA = _CFG.ALPHA
+FIGURES_DIR = _CFG.FIGURES_DIR
+SEED = _CFG.SEED
+LBDA_DEFAULT = _CFG.LBDA_DEFAULT
+D = _CFG.D
+L_SIGMA_S = _CFG.L_SIGMA_S
 
 t0 = time.time()
 

@@ -2,10 +2,7 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# DynTR benchmark launcher (Jean Zay-friendly)
-# - Assumes the venv already exists at: $WORK/venvs/dyntr
-# - Uses $WORK for scikit-learn dataset cache
-# - Keeps your python3.11 invocations unchanged
+# DynTR benchmark launcher
 # -----------------------------------------------------------------------------
 
 # --- Colors (auto-disable if not a TTY) --------------------------------------
@@ -38,32 +35,99 @@ run() {
   echo
 }
 
-# --- Guards ------------------------------------------------------------------
-: "${WORK:?WORK is not set. Example: export WORK=/lustre/fswork/projects/rech/<project>/<login>}"
+# --- CLI ---------------------------------------------------------------------
+usage() {
+  cat <<'USAGE'
+DynTR benchmark launcher
 
-[[ -f "$WORK/venvs/dyntr/bin/activate" ]] || die "Missing venv: $WORK/venvs/dyntr (activate not found)."
+Usage:
+  bash launcher.sh --run    # use benchmark/configs/config.yml
+  bash launcher.sh --blank  # use benchmark/configs/config-blank.yml
+  bash launcher.sh --help
+USAGE
+}
+
+mode=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --run) mode="run"; shift ;;
+    --blank) mode="blank"; shift ;;
+    --help|-h) usage; exit 0 ;;
+    *) die "Unknown argument: $1. Use --help." ;;
+  esac
+done
+
+[[ -n "$mode" ]] || { usage; exit 1; }
+
+# --- Guards ------------------------------------------------------------------
+if [[ -z "${WORK:-}" ]]; then
+  WORK="$HOME"
+  warn "WORK not set; defaulting to HOME: $WORK"
+fi
+
+VENV_ACTIVATE="$WORK/venvs/dyntr/bin/activate"
 
 # --- Environment -------------------------------------------------------------
-# shellcheck disable=SC1090
-source "$WORK/venvs/dyntr/bin/activate"
+if [[ -f "$VENV_ACTIVATE" ]]; then
+  # shellcheck disable=SC1090
+  source "$VENV_ACTIVATE"
+else
+  warn "Venv not found at $VENV_ACTIVATE; using current Python environment."
+fi
 
 export SKLEARN_DATA="${WORK}/sklearn_data"
 mkdir -p "$SKLEARN_DATA"
 
+CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/configs"
+if [[ "$mode" == "run" ]]; then
+  export DYNTR_CONFIG="${CONFIG_DIR}/config.yml"
+else
+  export DYNTR_CONFIG="${CONFIG_DIR}/config-blank.yml"
+fi
+
 info "WORK           = $WORK"
 info "PWD            = $(pwd)"
-info "VENV           = $WORK/venvs/dyntr"
+info "VENV           = ${VENV_ACTIVATE:-N/A}"
 info "SKLEARN_DATA   = $SKLEARN_DATA"
-info "python3.11     = $(command -v python3.11 || echo 'NOT FOUND')"
-python3.11 -V || die "python3.11 is not available in PATH."
+info "DYNTR_CONFIG   = $DYNTR_CONFIG"
+PYTHON_BIN="$(command -v python3.11 || command -v python3 || command -v python || true)"
+[[ -n "$PYTHON_BIN" ]] || die "No python executable found (tried python3.11, python3, python)."
+
+info "PYTHON_BIN    = $PYTHON_BIN"
+"$PYTHON_BIN" -V || die "Python is not available in PATH."
 
 echo
 
 # --- Parameters --------------------------------------------------------------
-eps_list=(1.0 0.5 0.1)
+yaml_val() {
+  local key="$1"
+  "$PYTHON_BIN" - <<PY
+import yaml
+from pathlib import Path
+cfg = yaml.safe_load(Path("${DYNTR_CONFIG}").read_text()) or {}
+cur = cfg
+for part in "${key}".split("."):
+    cur = cur.get(part, None) if isinstance(cur, dict) else None
+    if cur is None:
+        break
+print(cur if cur is not None else "")
+PY
+}
+
+eps="$(yaml_val data.eps)"
+n_t="$(yaml_val data.n_t)"
+n_s="$(yaml_val data.n_train_samples)"
+
+eps_list=()
+if [[ -n "$eps" ]]; then
+  eps_list=("$eps")
+else
+  eps_list=(1.0 0.5 0.1)
+fi
+
 alpha=0.05
-n_t=1000
-n_s=2000
+n_t="${n_t:-1000}"
+n_s="${n_s:-2000}"
 joblib_verbose=10
 datasets=(email boston)
 
@@ -74,33 +138,33 @@ echo
 # --- Benchmark runs -----------------------------------------------------------
 for eps in "${eps_list[@]}"; do
   run "bench_1 (synthetic) eps=${eps}" \
-    python3.11 bench_1_delta_illustration_synthetic_data.py \
+    "$PYTHON_BIN" bench_1_delta_illustration_synthetic_data.py \
       --eps "$eps" -n_t "$n_t" -n_s "$n_s" --joblib-verbose "$joblib_verbose"
 
   run "bench_2 (synthetic) eps=${eps}" \
-    python3.11 bench_2_sigma_influence_synthetic_data.py \
+    "$PYTHON_BIN" bench_2_sigma_influence_synthetic_data.py \
       --eps "$eps" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 
   run "bench_4 (synthetic) eps=${eps}" \
-    python3.11 bench_4_performance_synthetic_data.py \
+    "$PYTHON_BIN" bench_4_performance_synthetic_data.py \
       --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 done
 
 run "bench_3 (synthetic) epsilon influence" \
-  python3.11 bench_3_epsilon_influence_synthetic_data.py \
+  "$PYTHON_BIN" bench_3_epsilon_influence_synthetic_data.py \
     --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 
 run "bench_6 (synthetic) lambda_S influence" \
-  python3.11 bench_6_add_lbda_influence_synthetic_data.py \
+  "$PYTHON_BIN" bench_6_add_lbda_influence_synthetic_data.py \
     --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 
 run "bench_7 (synthetic) intro illustration" \
-  python3.11 bench_7_intro_illustration.py \
+  "$PYTHON_BIN" bench_7_intro_illustration.py \
     --eps 0.5 -n_t 1500 -n_s 4000 --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 
 for ds in "${datasets[@]}"; do
   run "bench_5 (real) dataset=${ds}" \
-    python3.11 bench_5_performance_real_data.py \
+    "$PYTHON_BIN" bench_5_performance_real_data.py \
       --dataset-name "$ds" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 done
 

@@ -1,0 +1,27 @@
+plotting:
+  figures_dir: "_figures"
+  fontsize: 16
+  lw: 5
+  alpha: 0.4
+
+launcher:
+  n_jobs: 7
+  n_runs: 1
+  seed: 4578902
+
+data:
+  l_eps:
+    start: -2
+    stop: 2
+    num: 5
+  l_sigma_s:
+    start: -2
+    stop: 2
+    num: 5
+  n_train_samples: 200
+  n_t: 50
+  step: 5
+  sigma: 1.0
+  d: 10
+  eps: 0.5
+  lbda_default: 1.0

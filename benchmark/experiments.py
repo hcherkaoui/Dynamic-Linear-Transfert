@@ -9,11 +9,18 @@ from dyntr.utils import check_random_state
 from dyntr.datasets import fetch_synthetic_datasets
 from dyntr.statistics import compute_delta, opt_lambda
 from dyntr.preprocessing import GreedySampleAugmenter
-from dyntr.constants import SIGMA, N_TRAIN_SAMPLES, N_T, STEP
 from dyntr.regression import (target_single_regression, source_single_regression,
                               full_collaboration_regression, dynamic_collaboration_regression,
                               oracle_dynamic_collaboration_regression, chen_et_al_regression,
                               obst_et_al_regression, hierical_regression)
+from config import get_config
+
+
+_CFG = get_config()
+SIGMA = _CFG.SIGMA
+N_TRAIN_SAMPLES = _CFG.N_TRAIN_SAMPLES
+N_T = _CFG.N_T
+STEP = _CFG.STEP
 
 
 def _ridge(X, y, lbda):

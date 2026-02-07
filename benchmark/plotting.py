@@ -10,7 +10,10 @@ import matplotlib.pyplot as plt
 from matplotlib import ticker
 import numpy as np
 from dyntr.utils import crop_pdf
-from dyntr.constants import ALPHA, LW, FONTSIZE, FIGURES_DIR
+from config import get_config
+
+
+_CFG = get_config()
 
 
 def _set_nice_log_xticks(ax):
@@ -38,12 +41,12 @@ def plot_stats_evolution(
     figsize: Tuple[float, float] = (4.0, 4.0),
     title: str = "",
     xlabel: str = "",
-    lw: float = LW,
-    alpha: float = ALPHA,
-    fontsize: float = FONTSIZE,
+    lw: float = _CFG.LW,
+    alpha: float = _CFG.ALPHA,
+    fontsize: float = _CFG.FONTSIZE,
     ncols_legend: int = 1,
     legend_y_pad: float = 1.3,
-    figures_dir: str | Path = FIGURES_DIR,
+    figures_dir: str | Path = _CFG.FIGURES_DIR,
     filename: str = "figure",
     filename_suffix: str = "",
     pdf_cropping: bool = True,

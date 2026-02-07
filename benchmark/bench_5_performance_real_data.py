@@ -8,12 +8,21 @@ import argparse
 from joblib import Parallel, delayed
 from dyntr.utils import format_duration, set_random_state, print_dataset_info
 from dyntr.datasets import fetch_real_datasets
-from dyntr.plotting import plot_stats_evolution
 from dyntr.utils import compute_exp_vars
-from benchmark.experiments import run_one_performance_comparison
-from dyntr.constants import (N_JOBS, N_RUNS, FONTSIZE, LW, ALPHA, FIGURES_DIR,
-                             SEED, LBDA_DEFAULT)
+from plotting import plot_stats_evolution
+from experiments import run_one_performance_comparison
+from config import get_config
 
+
+_CFG = get_config()
+N_JOBS = _CFG.N_JOBS
+N_RUNS = _CFG.N_RUNS
+FONTSIZE = _CFG.FONTSIZE
+LW = _CFG.LW
+ALPHA = _CFG.ALPHA
+FIGURES_DIR = _CFG.FIGURES_DIR
+SEED = _CFG.SEED
+LBDA_DEFAULT = _CFG.LBDA_DEFAULT
 
 t0 = time.time()
 
