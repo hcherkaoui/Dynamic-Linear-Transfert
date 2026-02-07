@@ -3,8 +3,3 @@ branch = True
 source = dyntr
 omit =
     dyntr/plotting.py
-    dyntr/models.py
-    dyntr/utils.py
-    dyntr/datasets.py
-    dyntr/preprocessing.py
-    dyntr/samplers.py

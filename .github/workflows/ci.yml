@@ -21,7 +21,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e . --no-deps
-          python -m pip install "numpy<2" numba pandas scikit-learn scipy matplotlib joblib
+          python -m pip install "numpy<2" numba pandas scikit-learn scipy matplotlib joblib pyyaml
           python -m pip install pytest pytest-cov
       - name: Run tests with coverage
         env:
@@ -49,7 +49,7 @@ jobs:
           python -m pip install flake8
       - name: Lint
         run: |
-          flake8 --ignore=E501,W503 --count dyntr benchmark datasets
+          flake8 --ignore=E501 --count dyntr benchmark dyntr/datasets
 
   code-lines:
     runs-on: ubuntu-latest
@@ -61,7 +61,7 @@ jobs:
           sudo apt-get install -y cloc
       - name: Code line counts
         run: |
-          cloc dyntr benchmark datasets
+          cloc dyntr benchmark dyntr/datasets
 
   benchmarks:
     runs-on: ubuntu-latest
@@ -76,9 +76,8 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e . --no-deps
-          python -m pip install "numpy<2" numba pandas scikit-learn scipy matplotlib joblib
+          cd benchmark
+          bash setup.sh
       - name: Run benchmark smoke
         env:
           MPLBACKEND: Agg
@@ -87,4 +86,5 @@ jobs:
           OPENBLAS_NUM_THREADS: "1"
           NUMEXPR_NUM_THREADS: "1"
         run: |
-          python -m benchmark.bench_1_delta_illustration_synthetic_data --eps 0.1 -n_t 50 -n_s 100 --joblib-verbose 0
+          cd benchmark
+          bash launcher.sh --blank

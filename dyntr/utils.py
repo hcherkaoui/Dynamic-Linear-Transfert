@@ -219,3 +219,82 @@ def compute_exp_vars(
         "lbda_s": lbda_s,
         "lbda_c": lbda_c,
     }
+
+
+def _as_generator(rng: np.random.Generator | int | None) -> np.random.Generator:
+    """Return a numpy Generator from a seed or an existing Generator."""
+    if rng is None:
+        return np.random.default_rng()
+    if isinstance(rng, (int, np.integer)):
+        return np.random.default_rng(int(rng))
+    if isinstance(rng, np.random.Generator):
+        return rng
+    raise ValueError("rng must be None, an int seed, or a numpy.random.Generator.")
+
+
+def _center(
+    X: np.ndarray,
+    *,
+    center: bool = True,
+    mean: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Center rows of X and return (Xc, mean)."""
+    X = np.asarray(X)
+    if not center:
+        mu = np.zeros((X.shape[1],), dtype=X.dtype) if mean is None else np.asarray(mean, dtype=X.dtype)
+        return X, mu
+    mu = X.mean(axis=0) if mean is None else np.asarray(mean, dtype=X.dtype)
+    return X - mu, mu
+
+
+def _safe_cholesky(A: np.ndarray, jitter: float = 1e-12, max_tries: int = 5) -> np.ndarray:
+    """Cholesky with diagonal jitter fallback."""
+    A = np.asarray(A)
+    for i in range(max_tries):
+        try:
+            return np.linalg.cholesky(A)
+        except np.linalg.LinAlgError:
+            A = A + (jitter * (10.0 ** i)) * np.eye(A.shape[0], dtype=A.dtype)
+    return np.linalg.cholesky(A)
+
+
+@numba.njit(cache=True, fastmath=True)
+def _row_norms_sq_numba(X: np.ndarray) -> np.ndarray:
+    n = X.shape[0]
+    out = np.empty(n, dtype=X.dtype)
+    for i in range(n):
+        s = 0.0
+        for j in range(X.shape[1]):
+            v = X[i, j]
+            s += v * v
+        out[i] = s
+    return out
+
+
+def _svec_psd(A: np.ndarray) -> np.ndarray:
+    """Symmetric vectorization with sqrt(2) for off-diagonals."""
+    A = np.asarray(A)
+    d = A.shape[0]
+    out = np.empty(d * (d + 1) // 2, dtype=A.dtype)
+    k = 0
+    for i in range(d):
+        for j in range(i, d):
+            if i == j:
+                out[k] = A[i, j]
+            else:
+                out[k] = np.sqrt(2.0) * A[i, j]
+            k += 1
+    return out
+
+
+@numba.njit(cache=True, fastmath=True)
+def _argmax_ignore_selected(values: np.ndarray, selected_mask: np.ndarray) -> int:
+    best = -1.0
+    best_i = -1
+    for i in range(values.shape[0]):
+        if selected_mask[i] == 0:
+            v = values[i]
+            if v > best:
+                best = v
+                best_i = i
+    return best_i
