@@ -13,4 +13,7 @@ authors = [{ name = "Hamza Cherkaoui", email = "hamza.cherkaoui@telecom-sudparis
 urls = { "Homepage" = "https://github.com/hcherkaoui/lin-dyn-transfert" }
 
 [tool.setuptools]
-packages = ["dyntr", "datasets", "benchmark"]
+packages = ["dyntr", "dyntr.datasets", "benchmark"]
+
+[tool.setuptools.package-data]
+"dyntr.datasets" = ["data/**/*"]
