@@ -47,9 +47,9 @@ def test_regression_modes_run():
 
     theta, n_t, n_s = target_single_regression(
         theta_t=theta_t,
-        X_t=X_t,
+        X_t_train=X_t,
         X_s=X_s,
-        y_t=y_t,
+        y_t_train=y_t,
         y_s=y_s,
         X_t_val=X_t_val,
         lbda_t=lbda_t,
@@ -65,9 +65,9 @@ def test_regression_modes_run():
 
     theta, n_t, n_s = source_single_regression(
         theta_t=theta_t,
-        X_t=X_t,
+        X_t_train=X_t,
         X_s=X_s,
-        y_t=y_t,
+        y_t_train=y_t,
         y_s=y_s,
         X_t_val=X_t_val,
         lbda_t=lbda_t,
@@ -83,9 +83,9 @@ def test_regression_modes_run():
 
     theta, n_t, n_s = full_collaboration_regression(
         theta_t=theta_t,
-        X_t=X_t,
+        X_t_train=X_t,
         X_s=X_s,
-        y_t=y_t,
+        y_t_train=y_t,
         y_s=y_s,
         X_t_val=X_t_val,
         lbda_t=lbda_t,
@@ -101,9 +101,9 @@ def test_regression_modes_run():
 
     theta, n_t, n_s = dynamic_collaboration_regression(
         theta_t=theta_t,
-        X_t=X_t,
+        X_t_train=X_t,
         X_s=X_s,
-        y_t=y_t,
+        y_t_train=y_t,
         y_s=y_s,
         X_t_val=X_t_val,
         lbda_t=lbda_t,
@@ -119,9 +119,9 @@ def test_regression_modes_run():
 
     theta, n_t, n_s = oracle_dynamic_collaboration_regression(
         theta_t=theta_t,
-        X_t=X_t,
+        X_t_train=X_t,
         X_s=X_s,
-        y_t=y_t,
+        y_t_train=y_t,
         y_s=y_s,
         X_t_val=X_t_val,
         lbda_t=lbda_t,
@@ -137,9 +137,9 @@ def test_regression_modes_run():
 
     theta, n_t, n_s = chen_et_al_regression(
         theta_t=theta_t,
-        X_t=X_t,
+        X_t_train=X_t,
         X_s=X_s,
-        y_t=y_t,
+        y_t_train=y_t,
         y_s=y_s,
         X_t_val=X_t_val,
         lbda_t=lbda_t,
@@ -155,9 +155,9 @@ def test_regression_modes_run():
 
     theta, n_t, n_s = obst_et_al_regression(
         theta_t=theta_t,
-        X_t=X_t,
+        X_t_train=X_t,
         X_s=X_s,
-        y_t=y_t,
+        y_t_train=y_t,
         y_s=y_s,
         X_t_val=X_t_val,
         lbda_t=lbda_t,
@@ -173,9 +173,9 @@ def test_regression_modes_run():
 
     theta, n_t, n_s = hierical_regression(
         theta_t=theta_t,
-        X_t=X_t,
+        X_t_train=X_t,
         X_s=X_s,
-        y_t=y_t,
+        y_t_train=y_t,
         y_s=y_s,
         X_t_val=X_t_val,
         lbda_t=lbda_t,
@@ -198,9 +198,9 @@ def test_regression_unknown_mode_raises():
     with pytest.raises(ValueError):
         regression(
             theta_t=theta_t,
-            X_t=X_t,
+            X_t_train=X_t,
             X_s=X_s,
-            y_t=y_t,
+            y_t_train=y_t,
             y_s=y_s,
             X_t_val=X_t_val,
             lbda_t=1.0,

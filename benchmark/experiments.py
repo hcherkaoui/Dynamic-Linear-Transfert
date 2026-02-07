@@ -134,21 +134,22 @@ def run_one_delta_illustration(
 
 
 def run_one_performance_comparison(
-    n: int,
+    n_samples_target: int,
     theta_t: np.ndarray,
     theta_s: np.ndarray,
-    X_t: np.ndarray,
-    X_s: np.ndarray,
-    y_t: np.ndarray,
-    y_s: np.ndarray,
+    X_t_train: np.ndarray,
+    y_t_train: np.ndarray,
     X_t_val: np.ndarray,
     y_t_val: np.ndarray,
     X_t_test: np.ndarray,
+    y_t_test: np.ndarray,
+    X_s: np.ndarray,
+    y_s: np.ndarray,
     sigma_t: float,
     sigma_s: float,
     lbda_s: float,
     alpha: float = 0.1,
-    n_min: int = 100,
+    min_n_samples_target: int = 100,
     seed: int | None = None,
     synthetic_data: bool = True,
 ) -> List[Tuple[str, str, str, np.ndarray]]:
@@ -156,23 +157,23 @@ def run_one_performance_comparison(
 
     Parameters
     ----------
-    n : int
+    n_samples_target : int
         Max number of samples for dataset target.
     theta_t, theta_s : ndarray of shape (d,)
         Ground-truth parameters for datasets target and source.
     X_t, X_s : ndarray
         Training features matrices.
     y_t, y_s : ndarray of shape (n_s,), (n_s,)
-        Targets.
-    X_t_val, y_t_val, X_t_test :  np.ndarray,
-        Validation and test features matrices.
+        Training targets.
+    X_t_val, y_t_val, X_t_test, y_t_test :  np.ndarray,
+        Validation and test features matrices and targets.
     sigma_t, sigma_s : float
         Noise stds.
     lbda_s : float
         Ridge penalties.
     alpha : float
         LCB parameter
-    n_min : int
+    min_n_samples_target : int
         Minimum number of target samples.
     seed : int
         Random seed.
@@ -187,85 +188,114 @@ def run_one_performance_comparison(
     rng = check_random_state(seed)
 
     _, d = X_s.shape
-    n_min = max(2 * d, n_min)
-    nn = np.arange(n_min, n + 1, step=STEP)
+    min_n_samples_target = max(2 * d, min_n_samples_target)
+    nn_samples_target = np.arange(min_n_samples_target, n_samples_target + 1, step=STEP)
 
-    X_t = np.array(X_t, copy=True, order="C")
+    X_t_train = np.array(X_t_train, copy=True, order="C")
     X_s = np.array(X_s, copy=True, order="C")
 
     if synthetic_data:
-        y_t = X_t @ theta_t + rng.normal(0.0, sigma_t, size=X_t.shape[0])
+        y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
         y_s = X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0])
     else:
-        y_t = np.array(y_t, copy=True, order="C")
+        y_t_train = np.array(y_t_train, copy=True, order="C")
         y_s = np.array(y_s, copy=True, order="C")
-        idx_t = rng.permutation(X_t.shape[0])
-        X_t, y_t = X_t[idx_t], y_t[idx_t]
+        idx_t = rng.permutation(X_t_train.shape[0])
+        X_t_train, y_t_train = X_t_train[idx_t], y_t_train[idx_t]
         idx_s = rng.permutation(X_s.shape[0])
         X_s, y_s = X_s[idx_s], y_s[idx_s]
 
-    X_t = X_t.copy()
-    y_t = y_t.copy()
+    X_t_train = X_t_train.copy()
+    y_t_train = y_t_train.copy()
+    lbda_t = opt_lambda(X_t_train, y_t_train, X_t_val, y_t_val)
 
-    lbda_t = opt_lambda(X_t, y_t, X_t_val, y_t_val)
-    lbda_c = lbda_s + lbda_t
+    def _mse(theta):
+        return np.mean((X_t_test @ theta - y_t_test)**2)
 
-    error_target, error_source, error_union = [], [], []
-    error_c, error_c_oracle = [], []
-    error_chen_et_al, error_obst_et_al = [], []
-    error_hierical = []
+    def _err(theta):
+        return np.linalg.norm(X_t_test @ (theta - theta_t))**2 / len(X_t_test)
 
-    for i in nn:
+    error_target, mse_target = [], []
+    error_source, mse_source = [], []
+    error_union, mse_union = [], []
+    error_c, mse_c = [], []
+    error_c_oracle, mse_c_oracle = [], []
+    error_chen_et_al, mse_chen_et_al = [], []
+    error_obst_et_al, mse_obst_et_al = [], []
+    error_hierical, mse_hierical = [], []
 
-        X_t_, y_t_ = X_t[:i], y_t[:i]
-        X_s_, y_s_ = X_s[:i], y_s[:i]
+    kwargs = dict(
+        theta_t=theta_t,
+        X_t_val=X_t_val,
+        X_s=X_s,
+        y_s=y_s,
+        lbda_t=lbda_t,
+        lbda_s=lbda_s,
+        lbda_c=lbda_s + lbda_t,
+        sigma_t=sigma_t,
+        sigma_s=sigma_s,
+        alpha=alpha,
+    )
 
-        kwargs = dict(theta_t=theta_t, X_t=X_t_, X_s=X_s_, y_t=y_t_, y_s=y_s_, X_t_val=X_t_val,
-                      lbda_t=lbda_t, lbda_s=lbda_s, lbda_c=lbda_c, sigma_t=sigma_t, sigma_s=sigma_s,
-                      alpha=alpha)
+    for n_samples_target in nn_samples_target:
 
-        # target
+        kwargs['X_t_train'] = X_t_train[:n_samples_target]
+        kwargs['y_t_train'] = y_t_train[:n_samples_target]
+
         theta, _, _ = target_single_regression(**kwargs)
-        error_target.append(np.linalg.norm(X_t_test @ (theta - theta_t))**2 / len(X_t_test))
+        error_target.append(_err(theta))
+        mse_target.append(_mse(theta))
 
-        # source
         theta, _, _ = source_single_regression(**kwargs)
-        error_source.append(np.linalg.norm(X_t_test @ (theta - theta_t))**2 / len(X_t_test))
+        error_source.append(_err(theta))
+        mse_source.append(_mse(theta))
 
-        # union
         theta, _, _ = full_collaboration_regression(**kwargs)
-        error_union.append(np.linalg.norm(X_t_test @ (theta - theta_t))**2 / len(X_t_test))
+        error_union.append(_err(theta))
+        mse_union.append(_mse(theta))
 
-        # collab
         theta, _, _ = dynamic_collaboration_regression(**kwargs)
-        error_c.append(np.linalg.norm(X_t_test @ (theta - theta_t))**2 / len(X_t_test))
+        error_c.append(_err(theta))
+        mse_c.append(_mse(theta))
 
-        # oracle
         theta, _, _ = oracle_dynamic_collaboration_regression(**kwargs)
-        error_c_oracle.append(np.linalg.norm(X_t_test @ (theta - theta_t))**2 / len(X_t_test))
+        error_c_oracle.append(_err(theta))
+        mse_c_oracle.append(_mse(theta))
 
-        # Chen et al
         theta, _, _ = chen_et_al_regression(**kwargs)
-        error_chen_et_al.append(np.linalg.norm(X_t_test @ (theta - theta_t))**2 / len(X_t_test))
+        error_chen_et_al.append(_err(theta))
+        mse_chen_et_al.append(_mse(theta))
 
-        # Obst et al
         theta, _, _ = obst_et_al_regression(**kwargs)
-        error_obst_et_al.append(np.linalg.norm(X_t_test @ (theta - theta_t))**2 / len(X_t_test))
+        error_obst_et_al.append(_err(theta))
+        mse_obst_et_al.append(_mse(theta))
 
-        # Hierarichal
         theta, _, _ = hierical_regression(**kwargs)
-        error_hierical.append(np.linalg.norm(X_t_test @ (theta - theta_t))**2 / len(X_t_test))
+        error_hierical.append(_err(theta))
+        mse_hierical.append(_mse(theta))
 
-    return [
-        ("Target-only ridge", "tab:blue", "dotted", np.array(nn + 1), np.array(error_target)),
-        ("Source-only ridge", "yellow", "dashed", np.array(nn + 1), np.array(error_source)),
-        ("Mixed-task ridge", "tab:purple", "dashed", np.array(nn + 1), np.array(error_union)),
-        ("Proposed", "tab:orange", "solid", np.array(nn + 1), np.array(error_c)),
-        ("Proposed (oracle)", "tab:red", "solid", np.array(nn + 1), np.array(error_c_oracle)),
-        ("Chen et al, 2014", "tab:gray", "solid", np.array(nn + 1), np.array(error_chen_et_al)),
-        ("Obst et al, 2021", "tab:green", "solid", np.array(nn + 1), np.array(error_obst_et_al)),
-        ("Hierarchical", "tab:olive", "solid", np.array(nn + 1), np.array(error_hierical)),
-    ]
+    return {
+        "error:": [
+            ("Target-only ridge", "tab:blue", "dotted", np.array(nn_samples_target + 1), np.array(error_target)),
+            ("Source-only ridge", "yellow", "dashed", np.array(nn_samples_target + 1), np.array(error_source)),
+            ("Mixed-task ridge", "tab:purple", "dashed", np.array(nn_samples_target + 1), np.array(error_union)),
+            ("Proposed", "tab:orange", "solid", np.array(nn_samples_target + 1), np.array(error_c)),
+            ("Proposed (oracle)", "tab:red", "solid", np.array(nn_samples_target + 1), np.array(error_c_oracle)),
+            ("Chen et al, 2014", "tab:gray", "solid", np.array(nn_samples_target + 1), np.array(error_chen_et_al)),
+            ("Obst et al, 2021", "tab:green", "solid", np.array(nn_samples_target + 1), np.array(error_obst_et_al)),
+            ("Hierarchical", "tab:olive", "solid", np.array(nn_samples_target + 1), np.array(error_hierical)),
+        ],
+        "mse:": [
+            ("Target-only ridge", "tab:blue", "dotted", np.array(nn_samples_target + 1), np.array(mse_target)),
+            ("Source-only ridge", "yellow", "dashed", np.array(nn_samples_target + 1), np.array(mse_source)),
+            ("Mixed-task ridge", "tab:purple", "dashed", np.array(nn_samples_target + 1), np.array(mse_union)),
+            ("Proposed", "tab:orange", "solid", np.array(nn_samples_target + 1), np.array(mse_c)),
+            ("Proposed (oracle)", "tab:red", "solid", np.array(nn_samples_target + 1), np.array(mse_c_oracle)),
+            ("Chen et al, 2014", "tab:gray", "solid", np.array(nn_samples_target + 1), np.array(mse_chen_et_al)),
+            ("Obst et al, 2021", "tab:green", "solid", np.array(nn_samples_target + 1), np.array(mse_obst_et_al)),
+            ("Hierarchical", "tab:olive", "solid", np.array(nn_samples_target + 1), np.array(mse_hierical)),
+        ],
+    }
 
 
 def run_one_epsilon_influence(

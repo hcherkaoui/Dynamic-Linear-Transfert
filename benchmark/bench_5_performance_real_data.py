@@ -52,7 +52,7 @@ if __name__ == "__main__":
                                only_train=False,
                                )
 
-    (X_t, X_s, y_t, y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, _, _) = data
+    (X_t, X_s, y_t, y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, y_t_test, _) = data
 
     exp_vars = compute_exp_vars(X_t=X_t, X_s=X_s, y_t=y_t, y_s=y_s, X_t_val=X_t_val,
                                 y_t_val=y_t_val, lbda_s=LBDA_DEFAULT)
@@ -68,20 +68,22 @@ if __name__ == "__main__":
 # Main
     delayed_runs = []
     for r in range(N_RUNS):
-        kwargs = dict(n=args.n_t, theta_t=theta_t, theta_s=theta_s, X_t=X_t, X_s=X_s, y_t=y_t,
-                      y_s=y_s, X_t_val=X_t_val, y_t_val=y_t_val, X_t_test=X_t_test, sigma_t=sigma_t,
-                      sigma_s=sigma_s, lbda_s=LBDA_DEFAULT, alpha=args.alpha, seed=r,
-                      synthetic_data=False)
+        kwargs = dict(n_samples_target=args.n_t, theta_t=theta_t, theta_s=theta_s,
+                      X_t_train=X_t, y_t_train=y_t, X_t_val=X_t_val, y_t_val=y_t_val,
+                      X_t_test=X_t_test, y_t_test=y_t_test, X_s=X_s, y_s=y_s,
+                      sigma_t=sigma_t, sigma_s=sigma_s, lbda_s=LBDA_DEFAULT, alpha=args.alpha,
+                      seed=r, synthetic_data=False)
         delayed_runs.append(delayed(run_one_performance_comparison)(**kwargs))
 
     results = Parallel(verbose=args.joblib_verbose, n_jobs=N_JOBS)(delayed_runs)
+    results = [res["error:"] for res in results]
 
 ###############################################################################
 # Plotting
     main_axis = ["Target-only ridge", "Mixed-task ridge", "Proposed", "Chen et al, 2014", "Obst et al, 2021"]
     secondary_axis = None
     uncertainty = False
-    plot_stats_evolution(results=results, xlogscale=True, ylogscale=True,
+    plot_stats_evolution(results=results, xlogscale=True, ylogscale=False,
                          main_axis=main_axis, secondary_axis=secondary_axis, figsize=(4.0, 4.5),
                          uncertainty=uncertainty, title=args.dataset_name, xlabel=r"$n_T$",
                          lw=LW, alpha=ALPHA, fontsize=FONTSIZE, ncols_legend=2, legend_y_pad=1.25,

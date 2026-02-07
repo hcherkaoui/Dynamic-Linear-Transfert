@@ -60,7 +60,7 @@ if __name__ == "__main__":
                                           only_train=False,
                                           )
 
-    (X_t, X_s, y_t, y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, _, _) = data
+    (X_t, X_s, y_t, y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, y_t_test, _) = data
 
     theta_t = meta['theta_t']
     theta_s = meta['theta_s']
@@ -72,13 +72,15 @@ if __name__ == "__main__":
 # Main
     delayed_runs = []
     for r in range(N_RUNS):
-        kwargs = dict(n=args.n_t, theta_t=theta_t, theta_s=theta_s, X_t=X_t, X_s=X_s, y_t=y_t,
-                      y_s=y_s, X_t_val=X_t_val, y_t_val=y_t_val, X_t_test=X_t_test, sigma_t=sigma_t,
-                      sigma_s=sigma_s, lbda_s=LBDA_DEFAULT, alpha=args.alpha, n_min=N_T_MIN, seed=r,
-                      synthetic_data=True)
+        kwargs = dict(n_samples_target=args.n_t, theta_t=theta_t, theta_s=theta_s,
+                      X_t_train=X_t, y_t_train=y_t, X_t_val=X_t_val, y_t_val=y_t_val,
+                      X_t_test=X_t_test, y_t_test=y_t_test, X_s=X_s, y_s=y_s,
+                      sigma_t=sigma_t, sigma_s=sigma_s, lbda_s=LBDA_DEFAULT, alpha=args.alpha,
+                      min_n_samples_target=N_T_MIN, seed=r, synthetic_data=True)
         delayed_runs.append(delayed(run_one_performance_comparison)(**kwargs))
 
     results = Parallel(verbose=args.joblib_verbose, n_jobs=N_JOBS)(delayed_runs)
+    results = [res["error:"] for res in results]
 
 ###############################################################################
 # Plotting

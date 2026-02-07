@@ -137,15 +137,15 @@ def _select_k(
 def _opt_lambda_corrected_aic(
     theta_t: np.ndarray,
     theta_s: np.ndarray,
-    X_t: np.ndarray,
-    y_t: np.ndarray,
+    X_t_train: np.ndarray,
+    y_t_train: np.ndarray,
     G_t: np.ndarray,
     G_s_inv_G_t: np.ndarray,
     G_t_val: np.ndarray,
     eye: np.ndarray,
     lbda_grid: np.ndarray,
 ) -> float:
-    n, _ = X_t.shape
+    n, _ = X_t_train.shape
     best_aicc, best_lbda = np.inf, lbda_grid[0]
     for lbda in lbda_grid:
         W = np.linalg.solve(
@@ -154,7 +154,7 @@ def _opt_lambda_corrected_aic(
         )
         theta_c = W @ theta_t + (eye - W) @ theta_s
         df = np.trace(W)
-        r = y_t - X_t @ theta_c
+        r = y_t_train - X_t_train @ theta_c
         sigma_s = (r @ r) / max(1.0, n - df)
         den = 1.0 - df + 2.0 / n
         if den <= 0 or sigma_s <= 0:
@@ -168,8 +168,8 @@ def _opt_lambda_corrected_aic(
 
 
 def _hierical_theta(
-    X_t: np.ndarray,
-    y_t: np.ndarray,
+    X_t_train: np.ndarray,
+    y_t_train: np.ndarray,
     X_s: np.ndarray,
     y_s: np.ndarray,
     sigma_t: float,
@@ -179,7 +179,7 @@ def _hierical_theta(
     lbda_c: float,
 ) -> np.ndarray:
     """
-    Two-task hierarchical Bayesian linear regression (Gaussian–Gaussian model).
+    Two-task hierarchical Bayesian linear regression (Gaussian-Gaussian model).
 
     Prior:
         mu ~ N(0, (lambda_0 I)^{-1})
@@ -187,15 +187,15 @@ def _hierical_theta(
         beta_s | mu ~ N(mu, (lambda_b I)^{-1})
 
     Likelihood:
-        y_t ~ N(X_t beta_t, sigma_t^2 I)
+        y_t_train ~ N(X_t_train beta_t, sigma_t^2 I)
         y_s ~ N(X_s beta_s, sigma_s^2 I)
 
     Returns posterior mean (MAP) for beta_t.
     """
-    n_t, d = X_t.shape
+    n_t, d = X_t_train.shape
     n_s, d_s = X_s.shape
     if d_s != d:
-        raise ValueError("X_t and X_s must have the same number of columns.")
+        raise ValueError("X_t_train and X_s must have the same number of columns.")
 
     # Stabilize variances
     sig2_t = max(float(sigma_t) * float(sigma_t), 1e-12)
@@ -205,9 +205,9 @@ def _hierical_theta(
     lambda_0 = max(float(lbda_c), 1e-8)
     lambda_b = max(0.5 * (float(lbda_t) + float(lbda_s)), 1e-8)
 
-    G_t = (X_t.T @ X_t) / sig2_t
+    G_t = (X_t_train.T @ X_t_train) / sig2_t
     G_s = (X_s.T @ X_s) / sig2_s
-    g_t = (X_t.T @ y_t) / sig2_t
+    g_t = (X_t_train.T @ y_t_train) / sig2_t
     g_s = (X_s.T @ y_s) / sig2_s
 
     eye = np.eye(d)
@@ -234,9 +234,9 @@ _REGR_DOC = dedent(
     ----------
     theta_t : ndarray of shape (d,)
         Ground-truth parameters for the target dataset (oracle mode only).
-    X_t, X_s : ndarray
+    X_t_train, X_s : ndarray
         Training feature matrices.
-    y_t, y_s : ndarray of shape (n_t,), (n_s,)
+    y_t_train, y_s : ndarray of shape (n_t,), (n_s,)
         Targets.
     X_t_val : ndarray
         Validation features for target.
@@ -261,9 +261,9 @@ _REGR_DOC = dedent(
 
 def regression(
     theta_t: np.ndarray,
-    X_t: np.ndarray,
+    X_t_train: np.ndarray,
+    y_t_train: np.ndarray,
     X_s: np.ndarray,
-    y_t: np.ndarray,
     y_s: np.ndarray,
     X_t_val: np.ndarray,
     lbda_t: float,
@@ -275,58 +275,59 @@ def regression(
     mode: str,
 ) -> Tuple[np.ndarray, int, int]:
     """Dispatch regression modes and return (theta, n_t, n_s)."""
+
     if mode == "target":
-        return _ridge(X_t, y_t, lbda_t), len(X_t), 0
+        return _ridge(X_t_train, y_t_train, lbda_t), len(X_t_train), 0
 
     if mode == "source":
         return _ridge(X_s, y_s, lbda_s), 0, len(X_s)
 
     if mode == "full":
-        return _ridge(np.r_[X_t, X_s], np.r_[y_t, y_s], lbda_c), len(X_t), len(X_s)
+        return _ridge(np.r_[X_t_train, X_s], np.r_[y_t_train, y_s], lbda_c), len(X_t_train), len(X_s)
 
     if mode == "dynamic":
-        aug = GreedySampleAugmenter(alpha=alpha).fit(X_t, y_t, X_t_val, lbda=lbda_t, sigma=sigma_t)
+        aug = GreedySampleAugmenter(alpha=alpha).fit(X_t_train, y_t_train, X_t_val, lbda=lbda_t, sigma=sigma_t)
         X_c, y_c = aug.transform(X_s, y_s, sigma=sigma_s, lbda=lbda_s)
-        return _ridge(X_c, y_c, lbda_c), len(X_t), int(aug.get_n_selected())
+        return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(aug.get_n_selected())
 
     if mode == "oracle_dynamic":
         ora = OracleGreedySampleAugmenter().fit(
-            X_t, y_t, X_t_val, lbda=lbda_t, theta_t_true=theta_t
+            X_t_train, y_t_train, X_t_val, lbda=lbda_t, theta_t_true=theta_t
         )
         X_c, y_c = ora.transform(X_s, y_s, lbda=lbda_c)
-        return _ridge(X_c, y_c, lbda_c), len(X_t), int(ora.get_n_selected())
+        return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(ora.get_n_selected())
 
     if mode == "chen_et_al":
-        theta_t_ = _ridge(X=X_t, y=y_t, lbda=0.0)
+        theta_t_ = _ridge(X=X_t_train, y=y_t_train, lbda=0.0)
         theta_s_ = _ridge(X=X_s, y=y_s, lbda=0.0)
-        eye = np.eye(X_t.shape[1])
-        G_t, G_s, G_t_val = X_t.T @ X_t, X_s.T @ X_s, X_t_val.T @ X_t_val
+        eye = np.eye(X_t_train.shape[1])
+        G_t, G_s, G_t_val = X_t_train.T @ X_t_train, X_s.T @ X_s, X_t_val.T @ X_t_val
         G_s_inv_G_t = np.linalg.solve(G_s, G_t)
         lbda_grid = np.logspace(-3, 3, 100)
         lbda = _opt_lambda_corrected_aic(
-            theta_t_, theta_s_, X_t, y_t, G_t, G_s_inv_G_t, G_t_val, eye, lbda_grid
+            theta_t_, theta_s_, X_t_train, y_t_train, G_t, G_s_inv_G_t, G_t_val, eye, lbda_grid
         )
         W = np.linalg.solve(
             G_t + lbda * (G_t_val @ G_s_inv_G_t) + lbda * G_t_val,
             G_t + lbda * (G_t_val @ G_s_inv_G_t),
         )
-        return W @ theta_t_ + (eye - W) @ theta_s_, len(X_t), len(X_s)
+        return W @ theta_t_ + (eye - W) @ theta_s_, len(X_t_train), len(X_s)
 
     if mode == "obst_et_al":
         fit_s = _fit_stats(X_s, y_s, lbda_s)
-        fit_t = _fit_stats(X_t, y_t, lbda_t)
+        fit_t = _fit_stats(X_t_train, y_t_train, lbda_t)
         alpha = _default_alpha(fit_t[1], factor=10.0)
         k_grid = range(0, 50, 100)
-        Xk = X_t_val if X_t_val is not None and X_t_val.size else np.vstack([X_s, X_t])
+        Xk = X_t_val if X_t_val is not None and X_t_val.size else np.vstack([X_s, X_t_train])
         k_star = _select_k(Xk, fit_s, fit_t, alpha, k_grid)
         A_k, _, _ = _make_cache(fit_t[1], alpha, k_star)
         theta = _theta_k(fit_s[0], fit_t[0], A_k)
-        return theta, len(X_t), k_star
+        return theta, len(X_t_train), k_star
 
     if mode == "hierical":
         theta = _hierical_theta(
-            X_t=X_t,
-            y_t=y_t,
+            X_t_train=X_t_train,
+            y_t_train=y_t_train,
             X_s=X_s,
             y_s=y_s,
             sigma_t=sigma_t,
@@ -335,7 +336,7 @@ def regression(
             lbda_s=lbda_s,
             lbda_c=lbda_c,
         )
-        return theta, len(X_t), len(X_s)
+        return theta, len(X_t_train), len(X_s)
 
     raise ValueError(f"Unknown mode: {mode}")
 
