@@ -1,8 +1,15 @@
 """Statistics test coverage for dyntr.statistics."""
 
+from __future__ import annotations
+
+import importlib
+import os
 import numpy as np
 
-from dyntr.statistics import compute_delta, compute_delta_variance, compute_delta_lower_bound, opt_lambda
+os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
+
+import dyntr.statistics as stats  # noqa
+importlib.reload(stats)
 
 
 def _make_linear_data(rng, n, d, sigma):
@@ -30,7 +37,7 @@ def test_compute_delta_and_variance_are_finite():
     A_s_inv = np.linalg.inv(G_s + lbda_s * eye)
     A_c_inv = np.linalg.inv(G_t + G_s + lbda_c * eye)
 
-    delta = compute_delta(
+    delta = stats.compute_delta(
         theta_t=theta_t,
         theta_s=theta_s,
         G_s=G_s,
@@ -44,7 +51,7 @@ def test_compute_delta_and_variance_are_finite():
         lbda_t=lbda_t,
         lbda_s=lbda_s,
     )
-    var = compute_delta_variance(
+    var = stats.compute_delta_variance(
         theta_s=theta_s,
         theta_t=theta_t,
         G_s=G_s,
@@ -58,7 +65,7 @@ def test_compute_delta_and_variance_are_finite():
         lbda_t=lbda_t,
         lbda_s=lbda_s,
     )
-    delta_lb = compute_delta_lower_bound(
+    delta_lb = stats.compute_delta_lower_bound(
         theta_t=theta_t,
         theta_s=theta_s,
         G_t=G_t,
@@ -88,6 +95,6 @@ def test_opt_lambda_returns_value_in_grid():
     y_val = X_val @ rng.normal(size=d) + 0.1 * rng.normal(size=10)
 
     grid = np.array([1e-3, 1e-2, 1e-1, 1.0])
-    lbda = opt_lambda(X=X, y=y, X_val=X_val, y_val=y_val, lbda_grid=grid)
+    lbda = stats.opt_lambda(X=X, y=y, X_val=X_val, y_val=y_val, lbda_grid=grid)
 
     assert lbda in grid

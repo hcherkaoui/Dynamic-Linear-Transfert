@@ -32,6 +32,13 @@ def test_sample_ridge_leverage_shapes():
     assert np.all(w > 0)
 
 
+def test_sample_ridge_leverage_zero_scores_fallback():
+    X = np.zeros((10, 3))
+    idx, w = sample_ridge_leverage(X, m=5, lam=1.0, rng=0)
+    assert idx.shape == (5,)
+    assert np.allclose(w, 1.0)
+
+
 def test_sample_maxvol_greedy():
     X = _make_X()
     idx, w = sample_maxvol_greedy(X, m=6)
