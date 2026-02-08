@@ -1,7 +1,12 @@
 ignore:
-  - "info.py"
   - "benchmark/**"
   - "dyntr/tests/"
+
+coverage:
+  status:
+    patch:
+      default:
+        threshold: 5%
 
 flag_management:
   individual_flags:

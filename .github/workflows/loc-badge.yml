@@ -20,7 +20,7 @@ jobs:
         with:
           directory: ./
           badge: ./badges/loc.svg
-          ignore: 'dyntr.egg-info|_cache|_figures|_merge_figures|badges|.git|__pycache__|.pytest_cache|.mypy_cache|.ruff_cache|.venv'
+          ignore: 'dyntr.egg-info|_cache|_figures|_merge_figures|badges|.git|__pycache__|.pytest_cache|.mypy_cache|.venv|benchmark/bench_.*_.*\.py|benchmarks/bench_.*_.*\.py|README\.md'
 
       - name: Commit badge
         run: |

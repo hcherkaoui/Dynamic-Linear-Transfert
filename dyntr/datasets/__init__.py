@@ -13,6 +13,24 @@ from ._datasets import _load_boston_dataset, _load_hillstrom_dataset
 Array4 = Tuple[np.ndarray, list[np.ndarray], np.ndarray, list[np.ndarray]]
 
 
+def _bootstrap_sources(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    n_sources: int,
+    rng: np.random.Generator,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    if n_sources == 1:
+        return [X.copy()], [y.copy()]
+    l_X, l_y = [], []
+    n = X.shape[0]
+    for _ in range(n_sources):
+        idx = rng.integers(0, n, size=n)
+        l_X.append(X[idx].copy())
+        l_y.append(y[idx].copy())
+    return l_X, l_y
+
+
 def generate_thetas(
     d: int,
     epsilon: float,
@@ -135,25 +153,14 @@ def fetch_synthetic_datasets(
     if n_sources <= 0:
         raise ValueError("n_sources must be positive.")
 
-    def _bootstrap_sources(X, y):
-        if n_sources == 1:
-            return [X.copy()], [y.copy()]
-        l_X, l_y = [], []
-        n = X.shape[0]
-        for _ in range(n_sources):
-            idx = rng.integers(0, n, size=n)
-            l_X.append(X[idx].copy())
-            l_y.append(y[idx].copy())
-        return l_X, l_y
-
-    l_X_s_train, l_y_s_train = _bootstrap_sources(X_s_train, y_s_train)
+    l_X_s_train, l_y_s_train = _bootstrap_sources(X_s_train, y_s_train, n_sources=n_sources, rng=rng)
     if n_val_samples > 0:
-        l_X_s_val, l_y_s_val = _bootstrap_sources(X_s_val, y_s_val)
+        l_X_s_val, l_y_s_val = _bootstrap_sources(X_s_val, y_s_val, n_sources=n_sources, rng=rng)
     else:
         l_X_s_val = [np.empty((0, d)) for _ in range(n_sources)]
         l_y_s_val = [np.empty((0,)) for _ in range(n_sources)]
     if n_test_samples > 0:
-        l_X_s_test, l_y_s_test = _bootstrap_sources(X_s_test, y_s_test)
+        l_X_s_test, l_y_s_test = _bootstrap_sources(X_s_test, y_s_test, n_sources=n_sources, rng=rng)
     else:
         l_X_s_test = [np.empty((0, d)) for _ in range(n_sources)]
         l_y_s_test = [np.empty((0,)) for _ in range(n_sources)]
@@ -296,18 +303,7 @@ def fetch_real_datasets(
         raise ValueError("n_sources must be positive.")
     rng = np.random.default_rng()
 
-    def _bootstrap_sources(X, y):
-        if n_sources == 1:
-            return [X.copy()], [y.copy()]
-        l_X, l_y = [], []
-        n = X.shape[0]
-        for _ in range(n_sources):
-            idx = rng.integers(0, n, size=n)
-            l_X.append(X[idx].copy())
-            l_y.append(y[idx].copy())
-        return l_X, l_y
-
-    l_X_s_train, l_y_s_train = _bootstrap_sources(X_s_train, y_s_train)
+    l_X_s_train, l_y_s_train = _bootstrap_sources(X_s_train, y_s_train, n_sources=n_sources, rng=rng)
 
     train_out: Array4 = (X_t_train, l_X_s_train, y_t_train, l_y_s_train)
 
@@ -316,12 +312,12 @@ def fetch_real_datasets(
 
     X_t_val_c, X_s_val_c = _as64(X_t_val_c, X_s_val_c)
     y_t_val, y_s_val = _as64(y_t_val, y_s_val)
-    l_X_s_val, l_y_s_val = _bootstrap_sources(X_s_val_c, y_s_val)
+    l_X_s_val, l_y_s_val = _bootstrap_sources(X_s_val_c, y_s_val, n_sources=n_sources, rng=rng)
     val_out: Array4 = (X_t_val_c, l_X_s_val, y_t_val, l_y_s_val)
 
     X_t_test_c, X_s_test_c = _as64(X_t_test_c, X_s_test_c)
     y_t_test, y_s_test = _as64(y_t_test, y_s_test)
-    l_X_s_test, l_y_s_test = _bootstrap_sources(X_s_test_c, y_s_test)
+    l_X_s_test, l_y_s_test = _bootstrap_sources(X_s_test_c, y_s_test, n_sources=n_sources, rng=rng)
     test_out: Array4 = (X_t_test_c, l_X_s_test, y_t_test, l_y_s_test)
 
     return train_out, val_out, test_out

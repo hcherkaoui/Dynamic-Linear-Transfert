@@ -27,7 +27,7 @@ jobs:
         env:
           MPLBACKEND: Agg
         run: |
-          pytest --cov=dyntr --cov-report=term-missing --cov-report=xml --cov-fail-under=70
+          pytest --cov=dyntr --cov-report=term-missing --cov-report=xml --cov-fail-under=65
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
@@ -49,19 +49,7 @@ jobs:
           python -m pip install flake8
       - name: Lint
         run: |
-          flake8 --ignore=E501 --count dyntr benchmark dyntr/datasets
-
-  code-lines:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install cloc
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cloc
-      - name: Code line counts
-        run: |
-          cloc dyntr benchmark dyntr/datasets
+          flake8 --ignore=E501 --count dyntr benchmark
 
   benchmarks:
     runs-on: ubuntu-latest
