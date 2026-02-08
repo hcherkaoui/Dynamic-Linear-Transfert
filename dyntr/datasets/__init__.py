@@ -10,7 +10,7 @@ from ._datasets import _condition_blocks, _assert_is_regression
 from ._datasets import _load_boston_dataset, _load_hillstrom_dataset
 
 
-Array4 = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+Array4 = Tuple[np.ndarray, list[np.ndarray], np.ndarray, list[np.ndarray]]
 
 
 def generate_thetas(
@@ -46,9 +46,10 @@ def fetch_synthetic_datasets(
     theta_t_and_theta_s: Optional[Tuple[ArrayLike, ArrayLike]] = None,
     only_train: bool = False,
     random_state: Optional[int] = None,
+    n_sources: int = 1,
 ) -> Union[Tuple[Array4, Dict[str, Any]], Tuple[Array4, Array4, Array4, Dict[str, Any]]]:
     """
-    Generate paired synthetic linear datasets (target, source).
+    Generate paired synthetic linear datasets (target, sources).
 
     The features of each dataset are i.i.d. standard normal. Targets follow
     linear models with additive Gaussian noise:
@@ -77,15 +78,17 @@ def fetch_synthetic_datasets(
         If True, return only the training split and metadata.
     random_state : int, optional
         Seed for reproducibility.
+    n_sources : int, default=1
+        Number of bootstrapped source datasets to return.
 
     Returns
     -------
     train_out : tuple
-        (X_t_train, X_s_train, y_t_train, y_s_train).
+        (X_t_train, l_X_s_train, y_t_train, l_y_s_train).
     val_out : tuple
-        (X_t_val, X_s_val, y_t_val, y_s_val). Returned only if `only_train=False`.
+        (X_t_val, l_X_s_val, y_t_val, l_y_s_val). Returned only if `only_train=False`.
     test_out : tuple
-        (X_t_test, X_s_test, y_t_test, y_s_test). Returned only if `only_train=False`.
+        (X_t_test, l_X_s_test, y_t_test, l_y_s_test). Returned only if `only_train=False`.
     meta : dict
         Metadata with keys:
             - 'theta_t' : ndarray of shape (d,)
@@ -128,9 +131,36 @@ def fetch_synthetic_datasets(
     y_t_test = (X_t_test @ theta_t) + sigma_t * rng.normal(size=n_test_samples) if n_test_samples > 0 else np.empty((0,))
     y_s_test = (X_s_test @ theta_s) + sigma_s * rng.normal(size=n_test_samples) if n_test_samples > 0 else np.empty((0,))
 
-    train_out = (X_t_train.copy(), X_s_train.copy(), y_t_train.copy(), y_s_train.copy())
-    val_out = (X_t_val.copy(), X_s_val.copy(), y_t_val.copy(), y_s_val.copy())
-    test_out = (X_t_test.copy(), X_s_test.copy(), y_t_test.copy(), y_s_test.copy())
+    n_sources = int(n_sources)
+    if n_sources <= 0:
+        raise ValueError("n_sources must be positive.")
+
+    def _bootstrap_sources(X, y):
+        if n_sources == 1:
+            return [X.copy()], [y.copy()]
+        l_X, l_y = [], []
+        n = X.shape[0]
+        for _ in range(n_sources):
+            idx = rng.integers(0, n, size=n)
+            l_X.append(X[idx].copy())
+            l_y.append(y[idx].copy())
+        return l_X, l_y
+
+    l_X_s_train, l_y_s_train = _bootstrap_sources(X_s_train, y_s_train)
+    if n_val_samples > 0:
+        l_X_s_val, l_y_s_val = _bootstrap_sources(X_s_val, y_s_val)
+    else:
+        l_X_s_val = [np.empty((0, d)) for _ in range(n_sources)]
+        l_y_s_val = [np.empty((0,)) for _ in range(n_sources)]
+    if n_test_samples > 0:
+        l_X_s_test, l_y_s_test = _bootstrap_sources(X_s_test, y_s_test)
+    else:
+        l_X_s_test = [np.empty((0, d)) for _ in range(n_sources)]
+        l_y_s_test = [np.empty((0,)) for _ in range(n_sources)]
+
+    train_out = (X_t_train.copy(), l_X_s_train, y_t_train.copy(), l_y_s_train)
+    val_out = (X_t_val.copy(), l_X_s_val, y_t_val.copy(), l_y_s_val)
+    test_out = (X_t_test.copy(), l_X_s_test, y_t_test.copy(), l_y_s_test)
 
     meta: Dict[str, Any] = {
         "theta_t": theta_t.copy(),
@@ -161,9 +191,10 @@ def fetch_real_datasets(
     standardize: bool = True,
     var_threshold: float = 1e-8,
     val_fraction: float = 0.3,
+    n_sources: int = 1,
 ) -> Array4 | Tuple[Array4, Array4, Array4]:
     """
-    Load a pair of related datasets (target and source),
+    Load a pair of related datasets (target and sources),
     create an optional validation split, and condition the designs to avoid
     ill-conditioning.
 
@@ -174,7 +205,7 @@ def fetch_real_datasets(
     - Else:
         (train_out, val_out, test_out)
 
-    where each *_out is a 4-tuple: (X_t, X_s, y_t, y_s).
+    where each *_out is a 4-tuple: (X_t, l_X_s, y_t, l_y_s).
     """
     valid_names = {"boston", "email"}
     if dataset_name not in valid_names:
@@ -260,17 +291,37 @@ def fetch_real_datasets(
     X_t_train, X_s_train = _as64(X_t_train, X_s_train)
     y_t_train, y_s_train = _as64(y_t_train, y_s_train)
 
-    train_out: Array4 = (X_t_train, X_s_train, y_t_train, y_s_train)
+    n_sources = int(n_sources)
+    if n_sources <= 0:
+        raise ValueError("n_sources must be positive.")
+    rng = np.random.default_rng()
+
+    def _bootstrap_sources(X, y):
+        if n_sources == 1:
+            return [X.copy()], [y.copy()]
+        l_X, l_y = [], []
+        n = X.shape[0]
+        for _ in range(n_sources):
+            idx = rng.integers(0, n, size=n)
+            l_X.append(X[idx].copy())
+            l_y.append(y[idx].copy())
+        return l_X, l_y
+
+    l_X_s_train, l_y_s_train = _bootstrap_sources(X_s_train, y_s_train)
+
+    train_out: Array4 = (X_t_train, l_X_s_train, y_t_train, l_y_s_train)
 
     if only_train:
         return train_out
 
     X_t_val_c, X_s_val_c = _as64(X_t_val_c, X_s_val_c)
     y_t_val, y_s_val = _as64(y_t_val, y_s_val)
-    val_out: Array4 = (X_t_val_c, X_s_val_c, y_t_val, y_s_val)
+    l_X_s_val, l_y_s_val = _bootstrap_sources(X_s_val_c, y_s_val)
+    val_out: Array4 = (X_t_val_c, l_X_s_val, y_t_val, l_y_s_val)
 
     X_t_test_c, X_s_test_c = _as64(X_t_test_c, X_s_test_c)
     y_t_test, y_s_test = _as64(y_t_test, y_s_test)
-    test_out: Array4 = (X_t_test_c, X_s_test_c, y_t_test, y_s_test)
+    l_X_s_test, l_y_s_test = _bootstrap_sources(X_s_test_c, y_s_test)
+    test_out: Array4 = (X_t_test_c, l_X_s_test, y_t_test, l_y_s_test)
 
     return train_out, val_out, test_out

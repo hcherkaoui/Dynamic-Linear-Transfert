@@ -15,12 +15,18 @@ import dyntr.datasets as datasets_mod
 
 
 def test_fetch_synthetic_datasets_basic():
-    data, meta = fetch_synthetic_datasets(n_train_samples=20, n_val_samples=5, n_test_samples=5, d=4)
-    (X_t, X_s, y_t, y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, y_t_test, _) = data
+    data, meta = fetch_synthetic_datasets(
+        n_train_samples=20, n_val_samples=5, n_test_samples=5, d=4, n_sources=3
+    )
+    (X_t, l_X_s, y_t, l_y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, y_t_test, _) = data
     assert X_t.shape == (20, 4)
-    assert X_s.shape == (20, 4)
+    assert isinstance(l_X_s, list)
+    assert len(l_X_s) == 3
+    assert l_X_s[0].shape == (20, 4)
     assert y_t.shape == (20,)
-    assert y_s.shape == (20,)
+    assert isinstance(l_y_s, list)
+    assert len(l_y_s) == 3
+    assert l_y_s[0].shape == (20,)
     assert X_t_val.shape == (5, 4)
     assert y_t_val.shape == (5,)
     assert X_t_test.shape == (5, 4)
@@ -46,12 +52,18 @@ def test_fetch_real_datasets_mocked(monkeypatch):
     test_data = (X[:3], y[:3]), (X[3:6], y[3:6])
 
     monkeypatch.setattr(datasets_mod, "_load_boston_dataset", lambda: (train_data, test_data))
-    out = datasets_mod.fetch_real_datasets("boston", n_train_samples=4, n_test_samples=2, only_train=True)
-    X_t, X_s, y_t, y_s = out
+    out = datasets_mod.fetch_real_datasets(
+        "boston", n_train_samples=4, n_test_samples=2, only_train=True, n_sources=2
+    )
+    X_t, l_X_s, y_t, l_y_s = out
     assert X_t.shape[0] == 4
-    assert X_s.shape[0] == 4
+    assert isinstance(l_X_s, list)
+    assert len(l_X_s) == 2
+    assert l_X_s[0].shape[0] == 4
     assert y_t.shape[0] == 4
-    assert y_s.shape[0] == 4
+    assert isinstance(l_y_s, list)
+    assert len(l_y_s) == 2
+    assert l_y_s[0].shape[0] == 4
 
     with pytest.raises(ValueError):
         datasets_mod.fetch_real_datasets("unknown")

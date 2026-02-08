@@ -5,6 +5,7 @@
 from __future__ import annotations
 import time
 import argparse
+import numpy as np
 from joblib import Parallel, delayed
 from dyntr.utils import format_duration, set_random_state, print_dataset_info
 from dyntr.datasets import fetch_synthetic_datasets
@@ -58,7 +59,10 @@ if __name__ == "__main__":
                                           only_train=False,
                                           )
 
-    (X_t, X_s, y_t, y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, y_t_test, _) = data
+    (X_t, l_X_s, y_t, l_y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, y_t_test, _) = data
+
+    X_s = np.vstack(l_X_s)
+    y_s = np.concatenate(l_y_s)
 
     theta_t = meta['theta_t']
     theta_s = meta['theta_s']
@@ -72,7 +76,7 @@ if __name__ == "__main__":
     for r in range(N_RUNS):
         kwargs = dict(n_samples_target=args.n_t, theta_t=theta_t, theta_s=theta_s,
                       X_t_train=X_t, y_t_train=y_t, X_t_val=X_t_val, y_t_val=y_t_val,
-                      X_t_test=X_t_test, y_t_test=y_t_test, X_s=X_s, y_s=y_s,
+                      X_t_test=X_t_test, y_t_test=y_t_test, l_X_s=l_X_s, l_y_s=l_y_s,
                       sigma_t=sigma_t, sigma_s=sigma_s, lbda_s=LBDA_DEFAULT, alpha=args.alpha,
                       seed=r, synthetic_data=True)
         delayed_runs.append(delayed(run_one_performance_comparison)(**kwargs))

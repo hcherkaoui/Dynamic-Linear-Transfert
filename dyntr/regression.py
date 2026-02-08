@@ -234,12 +234,12 @@ _REGR_DOC = dedent(
     ----------
     theta_t : ndarray of shape (d,)
         Ground-truth parameters for the target dataset (oracle mode only).
-    X_t_train, X_s : ndarray
-        Training feature matrices.
-    y_t_train, y_s : ndarray of shape (n_t,), (n_s,)
-        Targets.
+    X_t_train, y_t_train : ndarray
+        Training feature matrices and targets for the target dataset.
     X_t_val : ndarray
         Validation features for target.
+    l_X_s, l_y_s : list of ndarray of shape (n_t,), (n_s,)
+        Training feature matrices and targets for the source datasets.
     sigma_t, sigma_s : float
         Noise standard deviations.
     lbda_t, lbda_s, lbda_c : float
@@ -263,41 +263,66 @@ def regression(
     theta_t: np.ndarray,
     X_t_train: np.ndarray,
     y_t_train: np.ndarray,
-    X_s: np.ndarray,
-    y_s: np.ndarray,
     X_t_val: np.ndarray,
+    l_X_s: list[np.ndarray],
+    l_y_s: list[np.ndarray],
+    sigma_t: float,
+    sigma_s: float,
     lbda_t: float,
     lbda_s: float,
     lbda_c: float,
-    sigma_t: float,
-    sigma_s: float,
-    alpha: float,
-    mode: str,
+    alpha: float = 0.05,
+    mode: str = "dynamic",
 ) -> Tuple[np.ndarray, int, int]:
     """Dispatch regression modes and return (theta, n_t, n_s)."""
 
     if mode == "target":
+        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
         return _ridge(X_t_train, y_t_train, lbda_t), len(X_t_train), 0
 
     if mode == "source":
+        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
         return _ridge(X_s, y_s, lbda_s), 0, len(X_s)
 
     if mode == "full":
+        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
         return _ridge(np.r_[X_t_train, X_s], np.r_[y_t_train, y_s], lbda_c), len(X_t_train), len(X_s)
 
     if mode == "dynamic":
-        aug = GreedySampleAugmenter(alpha=alpha).fit(X_t_train, y_t_train, X_t_val, lbda=lbda_t, sigma=sigma_t)
-        X_c, y_c = aug.transform(X_s, y_s, sigma=sigma_s, lbda=lbda_s)
+        aug = GreedySampleAugmenter(alpha=alpha)
+        aug = aug.fit(
+            X_t_train,
+            y_t_train,
+            X_t_val,
+            lbda=lbda_t,
+            sigma=sigma_t,
+        )
+        X_c, y_c = aug.transform(
+            l_X_s,
+            l_y_s,
+            sigma=sigma_s,
+            lbda=lbda_s,
+        )
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(aug.get_n_selected())
 
     if mode == "oracle_dynamic":
-        ora = OracleGreedySampleAugmenter().fit(
-            X_t_train, y_t_train, X_t_val, lbda=lbda_t, theta_t_true=theta_t
+        ora = OracleGreedySampleAugmenter()
+        ora = ora.fit(
+            X_t_train,
+            y_t_train,
+            X_t_val,
+            lbda=lbda_t,
+            theta_t_true=theta_t,
         )
-        X_c, y_c = ora.transform(X_s, y_s, lbda=lbda_c)
+        X_c, y_c = ora.transform(
+            l_X_s,
+            l_y_s,
+            lbda=lbda_c,
+        )
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(ora.get_n_selected())
 
     if mode == "chen_et_al":
+        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
         theta_t_ = _ridge(X=X_t_train, y=y_t_train, lbda=0.0)
         theta_s_ = _ridge(X=X_s, y=y_s, lbda=0.0)
         eye = np.eye(X_t_train.shape[1])
@@ -305,15 +330,22 @@ def regression(
         G_s_inv_G_t = np.linalg.solve(G_s, G_t)
         lbda_grid = np.logspace(-3, 3, 100)
         lbda = _opt_lambda_corrected_aic(
-            theta_t_, theta_s_, X_t_train, y_t_train, G_t, G_s_inv_G_t, G_t_val, eye, lbda_grid
+            theta_t_,
+            theta_s_,
+            X_t_train,
+            y_t_train,
+            G_t,
+            G_s_inv_G_t,
+            G_t_val,
+            eye,
+            lbda_grid,
         )
-        W = np.linalg.solve(
-            G_t + lbda * (G_t_val @ G_s_inv_G_t) + lbda * G_t_val,
-            G_t + lbda * (G_t_val @ G_s_inv_G_t),
-        )
+        W = np.linalg.solve(G_t + lbda * (G_t_val @ G_s_inv_G_t) + lbda * G_t_val,
+                            G_t + lbda * (G_t_val @ G_s_inv_G_t))
         return W @ theta_t_ + (eye - W) @ theta_s_, len(X_t_train), len(X_s)
 
     if mode == "obst_et_al":
+        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
         fit_s = _fit_stats(X_s, y_s, lbda_s)
         fit_t = _fit_stats(X_t_train, y_t_train, lbda_t)
         alpha = _default_alpha(fit_t[1], factor=10.0)
@@ -325,6 +357,8 @@ def regression(
         return theta, len(X_t_train), k_star
 
     if mode == "hierical":
+        X_s = np.vstack(l_X_s)
+        y_s = np.concatenate(l_y_s)
         theta = _hierical_theta(
             X_t_train=X_t_train,
             y_t_train=y_t_train,

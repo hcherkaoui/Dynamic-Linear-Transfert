@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
 import numpy as np
+from typing import List
 from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_random_state
@@ -169,8 +170,8 @@ class OracleGreedySampleAugmenter(BaseEstimator, TransformerMixin):
 
     def transform(
         self,
-        X: ArrayLike,
-        y: ArrayLike,
+        l_X: List[ArrayLike],
+        l_y: List[ArrayLike],
         lbda: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -178,9 +179,9 @@ class OracleGreedySampleAugmenter(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : array-like of shape (n2, d)
-            Candidate design matrix (dataset source).
-        y : array-like of shape (n2,)
+        l_X : list of array-like of shape (n2, d)
+            Candidate design matrices (dataset source).
+        l_y : list of array-like of shape (n2,)
             Candidate targets.
         lbda : float
             Ridge regularization strength used for the collaborative model.
@@ -193,8 +194,9 @@ class OracleGreedySampleAugmenter(BaseEstimator, TransformerMixin):
             Augmented targets (or y₁ if no augmentation improves Δ_emp).
         """
         check_is_fitted(self, ("X_t_", "A_t_inv_", "theta_t_true_", "theta_t_hat_"))
-
+        X, y = np.vstack(l_X), np.concatenate(l_y)
         X_s, y_s = _check_xy(X, y)
+
         if X_s.shape[1] != self.n_features_:
             raise ValueError(f"Incompatible feature dimension: got {X_s.shape[1]}, expected {self.n_features_}.")
 
@@ -441,8 +443,8 @@ class GreedySampleAugmenter(BaseEstimator, TransformerMixin):
 
     def transform(
         self,
-        X: ArrayLike,
-        y: ArrayLike,
+        l_X: List[ArrayLike],
+        l_y: List[ArrayLike],
         lbda: float,
         sigma: Optional[float] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -451,9 +453,9 @@ class GreedySampleAugmenter(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X : array-like of shape (n_s, d)
-            Candidate design matrix to augment dataset target.
-        y : array-like of shape (n_s,)
+        l_X : list of array-like of shape (n_s, d)
+            Candidate design matrices to augment dataset target.
+        l_y : list of array-like of shape (n_s,)
             Candidate targets.
         lbda : float
             Ridge regularization strength used for the collaborative model.
@@ -468,6 +470,7 @@ class GreedySampleAugmenter(BaseEstimator, TransformerMixin):
             Augmented target vector.
         """
         check_is_fitted(self, ("X_t_", "A_t_inv_", "sigma_t_"))
+        X, y = np.vstack(l_X), np.concatenate(l_y)
         X_s, y_s = _check_xy(X, y)
 
         lbda_s = lbda

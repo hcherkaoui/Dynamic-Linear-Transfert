@@ -25,7 +25,7 @@ def test_greedy_sample_augmenter_fit_transform():
 
     aug = GreedySampleAugmenter(n_max=10, alpha=0.1, random_state=0)
     aug.fit(X_t, y_t, X_t_val, lbda=1.0, sigma=0.1)
-    Xc, yc = aug.transform(X_s, y_s, lbda=0.5, sigma=0.2)
+    Xc, yc = aug.transform([X_s], [y_s], lbda=0.5, sigma=0.2)
     assert Xc.shape[0] == yc.shape[0]
     assert Xc.shape[1] == X_t.shape[1]
     assert aug.get_n_selected() >= 0
@@ -39,7 +39,7 @@ def test_greedy_sample_augmenter_bad_shapes():
         aug.fit(X_t, y_t[:-1], X_t_val, lbda=1.0, sigma=0.1)
     aug.fit(X_t, y_t, X_t_val, lbda=1.0, sigma=0.1)
     with pytest.raises(ValueError):
-        aug.transform(X_s[:, :-1], y_s, lbda=0.5, sigma=0.2)
+        aug.transform([X_s[:, :-1]], [y_s], lbda=0.5, sigma=0.2)
 
 
 def test_greedy_sample_augmenter_bad_nmax():
@@ -56,7 +56,7 @@ def test_oracle_greedy_sample_augmenter_fit_transform():
 
     aug = OracleGreedySampleAugmenter(n_max=8, random_state=0)
     aug.fit(X_t, y_t, X_t_val, lbda=1.0, theta_t_true=theta_t)
-    Xc, yc = aug.transform(X_s, y_s, lbda=1.5)
+    Xc, yc = aug.transform([X_s], [y_s], lbda=1.5)
     assert Xc.shape[0] == yc.shape[0]
     assert Xc.shape[1] == X_t.shape[1]
     assert aug.get_n_selected() >= 0
@@ -70,4 +70,4 @@ def test_oracle_greedy_sample_augmenter_bad_shapes():
         aug.fit(X_t, y_t, X_t_val, lbda=1.0, theta_t_true=np.zeros(X_t.shape[1] + 1))
     aug.fit(X_t, y_t, X_t_val, lbda=1.0, theta_t_true=theta_t)
     with pytest.raises(ValueError):
-        aug.transform(X_s[:, :-1], y_s, lbda=1.0)
+        aug.transform([X_s[:, :-1]], [y_s], lbda=1.0)

@@ -27,19 +27,29 @@ def _ridge(X, y, lbda):
     return np.linalg.solve(X.T @ X + lbda * np.eye(X.shape[1]), X.T @ y)
 
 
+def _concat_sources(l_X_s, l_y_s):
+    X_s = np.vstack(l_X_s)
+    y_s = np.concatenate(l_y_s)
+    return X_s, y_s
+
+
 def run_one_delta_illustration(
+    n_samples_target: int,
     theta_t: np.ndarray,
     theta_s: np.ndarray,
-    X_t: np.ndarray,
-    X_s: np.ndarray,
-    y_t: np.ndarray,
-    y_s: np.ndarray,
+    X_t_train: np.ndarray,
+    y_t_train: np.ndarray,
     X_t_val: np.ndarray,
+    y_t_val: np.ndarray,
     X_t_test: np.ndarray,
+    y_t_test: np.ndarray,
+    l_X_s: list[np.ndarray],
+    l_y_s: list[np.ndarray],
     sigma_t: float,
     sigma_s: float,
     lbda_t: float,
     lbda_s: float,
+    min_n_samples_target: int = 100,
     seed: int | None = None,
     synthetic_data: bool = True,
 ) -> List[Tuple[str, str, str, np.ndarray, np.ndarray]]:
@@ -50,12 +60,14 @@ def run_one_delta_illustration(
     ----------
     theta_t, theta_s : ndarray of shape (d,)
         Ground-truth parameters for datasets target and source.
-    X_t, X_s : ndarray
-        Training features matrices.
-    y_t, y_s : ndarray of shape (n_s,), (n_s,)
-        Targets.
-    X_t_val, X_t_test :  np.ndarray,
-        Validation and test features matrices.
+    X_t_train, y_t_train : ndarray
+        Training features matrices and targets.
+    X_t_val, y_t_val : ndarray
+        Validation features matrices and targets.
+    X_t_test, y_t_test : ndarray
+        Test features matrices and targets.
+    l_X_s, l_y_s: list of ndarray
+        List of source training features matrices and targets.
     sigma_t, sigma_s : float
         Noise stds.
     lbda_t, lbda_s : float
@@ -70,38 +82,67 @@ def run_one_delta_illustration(
     list of tuples
         [(name, color, linestyle, x_values, y_values), ...]
     """
+    # assert proper dimenssions
+    for X_s in l_X_s:
+        assert X_s.shape[1] == l_X_s[0].shape[1]
+    assert X_t_train.shape[1] == l_X_s[0].shape[1]
+    assert X_t_val.shape[1] == l_X_s[0].shape[1]
+    assert X_t_test.shape[1] == l_X_s[0].shape[1]
+
     rng = check_random_state(seed)
+    _, d = l_X_s[0].shape
+    min_n_samples_target = max(2 * d, min_n_samples_target)
+    nn_samples_target = np.arange(min_n_samples_target, n_samples_target + 1, step=STEP)
 
-    n, d = X_s.shape
-    n_min = max(2 * d, 10)
-    nn = np.arange(n_min, n + 1, step=STEP)
+    # copy to avoid modifying the original data in-place (e.g., shuffling)
+    X_t_train = X_t_train.copy()
+    y_t_train = y_t_train.copy()
+    y_t_val = y_t_val.copy()
+    X_t_test = X_t_test.copy()
+    y_t_test = y_t_test.copy()
+    l_X_s = [X_s.copy() for X_s in l_X_s]
+    l_y_s = [y_s.copy() for y_s in l_y_s]
 
-    X_t = np.array(X_t, copy=True, order="C")
-    X_s = np.array(X_s, copy=True, order="C")
+    # sanityze feature matrixs
+    X_t_train = np.array(X_t_train, copy=True, order="C")
+    X_t_val = np.array(X_t_val, copy=True, order="C")
+    X_t_test = np.array(X_t_test, copy=True, order="C")
+    l_X_s = [np.array(X_s, copy=True, order="C") for X_s in l_X_s]
 
     if synthetic_data:
-        y_t = X_t @ theta_t + rng.normal(0.0, sigma_t, size=X_t.shape[0])
-        y_s = X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0])
-    else:
-        y_t = np.array(y_t, copy=True, order="C")
-        y_s = np.array(y_s, copy=True, order="C")
-        idx_t = rng.permutation(X_t.shape[0])
-        X_t, y_t = X_t[idx_t], y_t[idx_t]
-        idx_s = rng.permutation(X_s.shape[0])
-        X_s, y_s = X_s[idx_s], y_s[idx_s]
+        # For synthetic data, we can regenerate the targets with noise to have more variability across runs.
+        y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
+        l_y_s = [X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0]) for X_s in l_X_s]
 
+    else:
+        # For real data, we just shuffle the samples to have variability across runs.
+        idx_t = rng.permutation(X_t_train.shape[0])
+        X_t_train = X_t_train[idx_t]
+        y_t_train = y_t_train[idx_t]
+        for i, (X_s, y_s) in enumerate(zip(l_X_s, l_y_s)):
+            idx_s = rng.permutation(X_s.shape[0])
+            l_X_s[i], l_y_s[i] = X_s[idx_s], y_s[idx_s]
+
+    # sanityze targets
+    y_t_train = np.array(y_t_train, copy=True, order="C")
+    y_t_val = np.array(y_t_val, copy=True, order="C")
+    y_t_test = np.array(y_t_test, copy=True, order="C")
+    l_y_s = [np.array(y_s, copy=True, order="C") for y_s in l_y_s]
+
+    # for now, concatenate all source datasets
+    X_s, y_s = _concat_sources(l_X_s, l_y_s)
+
+    lbda_t = opt_lambda(X_t_train, y_t_train, X_t_val, y_t_val)
     eye = np.eye(d)
 
-    lbda_c = lbda_s + lbda_t
-
-    G_t = X_t.T @ X_t
-    b_t = X_t.T @ y_t
+    G_t = X_t_train.T @ X_t_train
+    b_t = X_t_train.T @ y_t_train
     A_t_inv = np.linalg.inv(G_t + lbda_t * eye)
     theta_t_hat = A_t_inv @ b_t
 
     l_Delta_hat, l_Delta_emp = [], []
 
-    for i in nn:
+    for i in nn_samples_target:
         Xi_s = X_s[:i]
         yi_s = y_s[:i]
 
@@ -111,7 +152,7 @@ def run_one_delta_illustration(
         A_s_inv = np.linalg.inv(G_s + lbda_s * eye)
         theta_s_hat = A_s_inv @ b_s
 
-        A_c_inv = np.linalg.inv(G_s + G_t + lbda_c * eye)
+        A_c_inv = np.linalg.inv(G_s + G_t + (lbda_s + lbda_t) * eye)
         theta_c_hat = A_c_inv @ (b_s + b_t)
 
         Delta_hat = compute_delta(
@@ -128,8 +169,8 @@ def run_one_delta_illustration(
         l_Delta_emp.append(Delta_emp)
 
     return [
-        (r"$\hat{\Delta}$", "tab:orange", "solid", nn, np.asarray(l_Delta_hat)),
-        (r"$\Delta^{\mathrm{emp}}$", "tab:blue", "solid", nn, np.asarray(l_Delta_emp)),
+        (r"$\hat{\Delta}$", "tab:orange", "solid", nn_samples_target, np.asarray(l_Delta_hat)),
+        (r"$\Delta^{\mathrm{emp}}$", "tab:blue", "solid", nn_samples_target, np.asarray(l_Delta_emp)),
     ]
 
 
@@ -143,8 +184,8 @@ def run_one_performance_comparison(
     y_t_val: np.ndarray,
     X_t_test: np.ndarray,
     y_t_test: np.ndarray,
-    X_s: np.ndarray,
-    y_s: np.ndarray,
+    l_X_s: list[np.ndarray],
+    l_y_s: list[np.ndarray],
     sigma_t: float,
     sigma_s: float,
     lbda_s: float,
@@ -161,12 +202,14 @@ def run_one_performance_comparison(
         Max number of samples for dataset target.
     theta_t, theta_s : ndarray of shape (d,)
         Ground-truth parameters for datasets target and source.
-    X_t, X_s : ndarray
-        Training features matrices.
-    y_t, y_s : ndarray of shape (n_s,), (n_s,)
-        Training targets.
-    X_t_val, y_t_val, X_t_test, y_t_test :  np.ndarray,
-        Validation and test features matrices and targets.
+    X_t_train, y_t_train : ndarray
+        Training features matrices and targets.
+    X_t_val, y_t_val : ndarray
+        Validation features matrices and targets.
+    X_t_test, y_t_test : ndarray
+        Test features matrices and targets.
+    l_X_s, l_y_s: list of ndarray
+        List of source training features matrices and targets.
     sigma_t, sigma_s : float
         Noise stds.
     lbda_s : float
@@ -185,28 +228,53 @@ def run_one_performance_comparison(
     list of tuples
         ``[(name, color, linestyle, values), ...]``
     """
-    rng = check_random_state(seed)
+    # assert proper dimenssions
+    for X_s in l_X_s:
+        assert X_s.shape[1] == l_X_s[0].shape[1]
+    assert X_t_train.shape[1] == l_X_s[0].shape[1]
+    assert X_t_val.shape[1] == l_X_s[0].shape[1]
+    assert X_t_test.shape[1] == l_X_s[0].shape[1]
 
-    _, d = X_s.shape
+    rng = check_random_state(seed)
+    _, d = l_X_s[0].shape
     min_n_samples_target = max(2 * d, min_n_samples_target)
     nn_samples_target = np.arange(min_n_samples_target, n_samples_target + 1, step=STEP)
 
-    X_t_train = np.array(X_t_train, copy=True, order="C")
-    X_s = np.array(X_s, copy=True, order="C")
-
-    if synthetic_data:
-        y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
-        y_s = X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0])
-    else:
-        y_t_train = np.array(y_t_train, copy=True, order="C")
-        y_s = np.array(y_s, copy=True, order="C")
-        idx_t = rng.permutation(X_t_train.shape[0])
-        X_t_train, y_t_train = X_t_train[idx_t], y_t_train[idx_t]
-        idx_s = rng.permutation(X_s.shape[0])
-        X_s, y_s = X_s[idx_s], y_s[idx_s]
-
+    # copy to avoid modifying the original data in-place (e.g., shuffling)
     X_t_train = X_t_train.copy()
     y_t_train = y_t_train.copy()
+    y_t_val = y_t_val.copy()
+    X_t_test = X_t_test.copy()
+    y_t_test = y_t_test.copy()
+    l_X_s = [X_s.copy() for X_s in l_X_s]
+    l_y_s = [y_s.copy() for y_s in l_y_s]
+
+    # sanityze feature matrixs
+    X_t_train = np.array(X_t_train, copy=True, order="C")
+    X_t_val = np.array(X_t_val, copy=True, order="C")
+    X_t_test = np.array(X_t_test, copy=True, order="C")
+    l_X_s = [np.array(X_s, copy=True, order="C") for X_s in l_X_s]
+
+    if synthetic_data:
+        # For synthetic data, we can regenerate the targets with noise to have more variability across runs.
+        y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
+        l_y_s = [X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0]) for X_s in l_X_s]
+
+    else:
+        # For real data, we just shuffle the samples to have variability across runs.
+        idx_t = rng.permutation(X_t_train.shape[0])
+        X_t_train = X_t_train[idx_t]
+        y_t_train = y_t_train[idx_t]
+        for i, (X_s, y_s) in enumerate(zip(l_X_s, l_y_s)):
+            idx_s = rng.permutation(X_s.shape[0])
+            l_X_s[i], l_y_s[i] = X_s[idx_s], y_s[idx_s]
+
+    # sanityze targets
+    y_t_train = np.array(y_t_train, copy=True, order="C")
+    y_t_val = np.array(y_t_val, copy=True, order="C")
+    y_t_test = np.array(y_t_test, copy=True, order="C")
+    l_y_s = [np.array(y_s, copy=True, order="C") for y_s in l_y_s]
+
     lbda_t = opt_lambda(X_t_train, y_t_train, X_t_val, y_t_val)
 
     def _mse(theta):
@@ -227,8 +295,8 @@ def run_one_performance_comparison(
     kwargs = dict(
         theta_t=theta_t,
         X_t_val=X_t_val,
-        X_s=X_s,
-        y_s=y_s,
+        l_X_s=l_X_s,
+        l_y_s=l_y_s,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
         lbda_c=lbda_s + lbda_t,
@@ -339,14 +407,15 @@ def run_one_epsilon_influence(
             theta_t_and_theta_s=theta_t_and_theta_s,
             only_train=False,
         )
-        (X_t, X_s, y_t, y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, _, _) = data
+        (X_t, l_X_s, y_t, l_y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, _, _) = data
         X_t, y_t = X_t[:N_T], y_t[:N_T]
 
         lbda_t = opt_lambda(X_t, y_t, X_t_val, y_t_val)
         lbda_c = lbda_s + lbda_t
 
         augmenter = GreedySampleAugmenter(alpha=alpha).fit(X_t, y_t, X_t_val, lbda=lbda_t, sigma=1.0)
-        X_c, y_c = augmenter.transform(X_s, y_s, lbda=lbda_s, sigma=SIGMA)
+        X_s, y_s = _concat_sources(l_X_s, l_y_s)
+        X_c, y_c = augmenter.transform([X_s,], [y_s,], lbda=lbda_s, sigma=SIGMA)
 
         l_n.append(augmenter.get_n_selected())
 
@@ -404,14 +473,15 @@ def run_one_sigma_influence(
             theta_t_and_theta_s=theta_t_and_theta_s,
             only_train=False,
         )
-        (X_t, X_s, y_t, y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, _, _) = data
+        (X_t, l_X_s, y_t, l_y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, _, _) = data
         X_t, y_t = X_t[:N_T], y_t[:N_T]
 
         lbda_t = opt_lambda(X_t, y_t, X_t_val, y_t_val)
         lbda_c = lbda_s + lbda_t
 
         augmenter = GreedySampleAugmenter(alpha=alpha).fit(X_t, y_t, X_t_val, lbda=lbda_t, sigma=SIGMA)
-        X_c, y_c = augmenter.transform(X_s, y_s, lbda=lbda_s, sigma=sigma_s)
+        X_s, y_s = _concat_sources(l_X_s, l_y_s)
+        X_c, y_c = augmenter.transform([X_s,], [y_s,], lbda=lbda_s, sigma=sigma_s)
 
         l_n.append(augmenter.get_n_selected())
 
@@ -429,13 +499,14 @@ def run_one_sigma_influence(
 def run_one_lbda_influence(
     theta_t: np.ndarray,
     theta_s: np.ndarray,
-    X_t: np.ndarray,
-    X_s: np.ndarray,
-    y_t: np.ndarray,
-    y_s: np.ndarray,
+    X_t_train: np.ndarray,
+    y_t_train: np.ndarray,
     X_t_val: np.ndarray,
     y_t_val: np.ndarray,
     X_t_test: np.ndarray,
+    y_t_test: np.ndarray,
+    l_X_s: list[np.ndarray],
+    l_y_s: list[np.ndarray],
     sigma_t: float,
     sigma_s: float,
     alpha: float,
@@ -448,12 +519,14 @@ def run_one_lbda_influence(
     ----------
     theta_t, theta_s : ndarray of shape (d,)
         Ground-truth parameters for datasets target and source.
-    X_t, X_s : ndarray
-        Training features matrices.
-    y_t, y_s : ndarray of shape (n_s,), (n_s,)
-        Targets.
-    X_t_val, y_t_val, X_t_test :  np.ndarray,
-        Validation and test features matrices.
+    X_t_train, y_t_train : ndarray
+        Training features matrices and targets.
+    X_t_val, y_t_val : ndarray
+        Validation features matrices and targets.
+    X_t_test, y_t_test : ndarray
+        Test features matrices and targets.
+    l_X_s, l_y_s: list of ndarray
+        List of source training features matrices and targets.
     sigma_t, sigma_s : float
         Noise stds.
     alpha : float
@@ -468,35 +541,67 @@ def run_one_lbda_influence(
     list of tuples
         ``[(name, color, linestyle, values), ...]``
     """
-    rng = check_random_state(seed)
+    # assert proper dimenssions
+    for X_s in l_X_s:
+        assert X_s.shape[1] == l_X_s[0].shape[1]
+    assert X_t_train.shape[1] == l_X_s[0].shape[1]
+    assert X_t_val.shape[1] == l_X_s[0].shape[1]
+    assert X_t_test.shape[1] == l_X_s[0].shape[1]
 
-    X_t = np.array(X_t, copy=True, order="C")
-    X_s = np.array(X_s, copy=True, order="C")
+    rng = check_random_state(seed)
+    _, d = l_X_s[0].shape
+
+    # copy to avoid modifying the original data in-place (e.g., shuffling)
+    X_t_train = X_t_train.copy()
+    y_t_train = y_t_train.copy()
+    y_t_val = y_t_val.copy()
+    X_t_test = X_t_test.copy()
+    y_t_test = y_t_test.copy()
+    l_X_s = [X_s.copy() for X_s in l_X_s]
+    l_y_s = [y_s.copy() for y_s in l_y_s]
+
+    # sanityze feature matrixs
+    X_t_train = np.array(X_t_train, copy=True, order="C")
+    X_t_val = np.array(X_t_val, copy=True, order="C")
+    X_t_test = np.array(X_t_test, copy=True, order="C")
+    l_X_s = [np.array(X_s, copy=True, order="C") for X_s in l_X_s]
 
     if synthetic_data:
-        y_t = X_t @ theta_t + rng.normal(0.0, sigma_t, size=X_t.shape[0])
-        y_s = X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0])
-    else:
-        y_t = np.array(y_t, copy=True, order="C")
-        y_s = np.array(y_s, copy=True, order="C")
-        idx_t = rng.permutation(X_t.shape[0])
-        X_t, y_t = X_t[idx_t], y_t[idx_t]
-        idx_s = rng.permutation(X_s.shape[0])
-        X_s, y_s = X_s[idx_s], y_s[idx_s]
+        # For synthetic data, we can regenerate the targets with noise to have more variability across runs.
+        y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
+        l_y_s = [X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0]) for X_s in l_X_s]
 
-    lbda_t = opt_lambda(X_t, y_t, X_t_val, y_t_val)
+    else:
+        # For real data, we just shuffle the samples to have variability across runs.
+        idx_t = rng.permutation(X_t_train.shape[0])
+        X_t_train = X_t_train[idx_t]
+        y_t_train = y_t_train[idx_t]
+        for i, (X_s, y_s) in enumerate(zip(l_X_s, l_y_s)):
+            idx_s = rng.permutation(X_s.shape[0])
+            l_X_s[i], l_y_s[i] = X_s[idx_s], y_s[idx_s]
+
+    # sanityze targets
+    y_t_train = np.array(y_t_train, copy=True, order="C")
+    y_t_val = np.array(y_t_val, copy=True, order="C")
+    y_t_test = np.array(y_t_test, copy=True, order="C")
+    l_y_s = [np.array(y_s, copy=True, order="C") for y_s in l_y_s]
+
+    # for now, concatenate all source datasets
+    X_s, y_s = _concat_sources(l_X_s, l_y_s)
+
+    lbda_t = opt_lambda(X_t_train, y_t_train, X_t_val, y_t_val)
     l_lbda_c = np.logspace(np.log(lbda_t / 20.0), np.log(lbda_t * 20.0), 50)
 
     l_n, error_diff = [], []
 
     for lbda_c in l_lbda_c:
-        augmenter = GreedySampleAugmenter(alpha=alpha).fit(X_t, y_t, X_t_val, lbda=lbda_t, sigma=sigma_t)
-        X_c, y_c = augmenter.transform(X_s, y_s, lbda=lbda_c, sigma=sigma_s)
+        augmenter = GreedySampleAugmenter(alpha=alpha).fit(X_t_train, y_t_train, X_t_val, lbda=lbda_t, sigma=sigma_t)
+        X_c, y_c = augmenter.transform([X_s,], [y_s,], lbda=lbda_c, sigma=sigma_s)
 
         l_n.append(augmenter.get_n_selected())
 
         error_diff.append(
-            np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)  # noqa
+            np.linalg.norm(X_t_test @ (_ridge(X_t_train, y_t_train, lbda_t) - theta_t)) ** 2 / len(X_t_test)  # noqa
             - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)  # noqa
         )
 
