@@ -26,6 +26,7 @@ cifar/
 data/
 _data/
 stl10/
+dyntr/datasets/data/
 
 # ignore compiled dirs
 build/
@@ -56,3 +57,6 @@ dyntr.egg-info/
 *.nt.bz2
 *.tar.gz
 *.tgz
+
+# allow bundled dataset archive
+!dyntr/datasets/data.zip

@@ -14,3 +14,10 @@ srun --pty -A jcx@v100 -p gpu_p13 --gres=gpu:1 -c 26 --time=01:00:00 bash
 ```bash
 bash launcher.sh
 ```
+
+## Datasets
+Datasets are bundled in `dyntr/datasets/data.zip` and extracted during `benchmark/setup.sh`. To extract manually:
+
+```bash
+bash ../dyntr/datasets/extract_data.sh
+```

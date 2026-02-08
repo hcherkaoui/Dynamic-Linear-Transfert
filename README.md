@@ -13,6 +13,13 @@ A collection of benchmarks for collaborative learning.
 
 **DynTR** is a research-oriented Python benchmark suite focused on **collaborative learning**, in which models enhance their predictive performance by leveraging training data from other related datasets to improve generalization.
 
+## Datasets
+The dataset files are bundled as `dyntr/datasets/data.zip`. They are extracted during setup via `benchmark/setup.sh`. If needed, you can extract manually:
+
+```bash
+bash dyntr/datasets/extract_data.sh
+```
+
 ## Install
 
 Recommended (matches the benchmark launch flow): create the conda env from `environment.yml`.

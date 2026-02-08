@@ -81,6 +81,7 @@ run "Editable install (pip -e .)" "$VENV_PYTHON" -m pip install -e "$repo_root"
 run "Ensure joblib" "$VENV_PYTHON" -m pip install -U joblib
 
 # --- Pre-download datasets ---------------------------------------------------
+run "Extract bundled datasets" bash "$repo_root/dyntr/datasets/extract_data.sh"
 run "Download California Housing dataset" "$VENV_PYTHON" -c "from sklearn.datasets import fetch_california_housing; fetch_california_housing(); print('california_housing: ok')"
 
 # --- Sanity check ------------------------------------------------------------

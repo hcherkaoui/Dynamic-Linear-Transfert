@@ -16,4 +16,4 @@ urls = { "Homepage" = "https://github.com/hcherkaoui/lin-dyn-transfert" }
 packages = ["dyntr", "dyntr.datasets", "benchmark"]
 
 [tool.setuptools.package-data]
-"dyntr.datasets" = ["data/**/*"]
+"dyntr.datasets" = ["data.zip", "extract_data.sh", "data/**/*"]

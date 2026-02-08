@@ -131,6 +131,14 @@ n_s="${n_s:-2000}"
 joblib_verbose=10
 datasets=(email boston)
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+data_dir="${script_dir}/../dyntr/datasets/data"
+email_path="${data_dir}/email/Hillstrom.csv"
+if [[ ! -f "$email_path" ]]; then
+  warn "Email dataset not found at $email_path; skipping 'email' benchmark."
+  datasets=("${datasets[@]/email}")
+fi
+
 info "Parameters: eps_list=(${eps_list[*]}), alpha=${alpha}, n_t=${n_t}, n_s=${n_s}, joblib_verbose=${joblib_verbose}"
 info "Datasets:   (${datasets[*]})"
 echo

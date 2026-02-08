@@ -7,8 +7,6 @@ import pytest
 from dyntr.datasets import fetch_synthetic_datasets
 from dyntr.datasets._datasets import (
     _load_hillstrom_dataset,
-    _load_open_ecommerce_dataset,
-    _load_wine_quality_dataset,
     _load_boston_dataset,
     _guess_column,
     _autodetect_user_id,
@@ -93,66 +91,6 @@ def test_load_hillstrom_dataset_mocked(monkeypatch):
 
     with pytest.raises(ValueError):
         _load_hillstrom_dataset(split="unknown_split")
-
-
-def test_load_open_ecommerce_dataset_mocked(monkeypatch):
-    purchases = pd.DataFrame(
-        {
-            "Survey ResponseID": [1, 1, 2, 2, 3, 3, 4, 5],
-            "Shipping Address State": ["CA", "CA", "NY", "NY", "NY", "CA", "TX", "TX"],
-            "Purchase Price Per Unit": [10.0, 5.0, 7.5, 8.0, 12.0, 20.0, 3.0, 4.0],
-            "Quantity": [1, 2, 1, 1, 1, 1, 2, 1],
-        }
-    )
-    survey = pd.DataFrame(
-        {
-            "Survey ResponseID": [1, 2, 3, 4, 5],
-            "age": [30, 40, 50, 35, 45],
-            "state": ["CA", "NY", "NY", "TX", "TX"],
-        }
-    )
-
-    def _fake_read_csv(path, *args, **kwargs):
-        if "amazon-purchases" in path:
-            return purchases.copy()
-        return survey.copy()
-
-    monkeypatch.setattr(pd, "read_csv", _fake_read_csv)
-    monkeypatch.setattr("os.path.exists", lambda _p: True)
-
-    train_data, test_data = _load_open_ecommerce_dataset()
-    (X1_tr, y1_tr), (X2_tr, y2_tr) = train_data
-    (X1_te, y1_te), (X2_te, y2_te) = test_data
-    assert X1_tr.shape[1] == X2_tr.shape[1]
-    assert y1_tr.ndim == 1 and y2_tr.ndim == 1
-
-
-def test_load_wine_quality_dataset_mocked(monkeypatch):
-    red = pd.DataFrame(
-        {
-            "fixed acidity": [7.4, 7.8, 7.8, 11.2],
-            "quality": [5, 5, 6, 6],
-        }
-    )
-    white = pd.DataFrame(
-        {
-            "fixed acidity": [7.0, 6.3, 8.1, 7.2],
-            "quality": [6, 6, 7, 5],
-        }
-    )
-
-    def _fake_read_csv(path, *args, **kwargs):
-        if "red" in path:
-            return red.copy()
-        return white.copy()
-
-    monkeypatch.setattr(pd, "read_csv", _fake_read_csv)
-    train_data, test_data = _load_wine_quality_dataset()
-    (X1_tr, y1_tr), (X2_tr, y2_tr) = train_data
-    (X1_te, y1_te), (X2_te, y2_te) = test_data
-    assert X1_tr.shape[1] == X2_tr.shape[1]
-    assert y1_tr.ndim == 1 and y2_tr.ndim == 1
-    assert X1_te.shape[0] + X1_tr.shape[0] == 4
 
 
 def test_load_boston_dataset_mocked(monkeypatch):
