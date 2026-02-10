@@ -23,6 +23,7 @@ D = _CFG.D
 SIGMA = _CFG.SIGMA
 
 CHUNK_SIZE = 10
+START_PLOT = 2
 
 t0 = time.time()
 
@@ -103,12 +104,12 @@ if __name__ == "__main__":
 # Plotting
     main_axis = [
         "Target-only ridge",
-        "Source-only ridge",
         "Mixed-task ridge",
-        "Proposed (greedy)",
+        "Hierarchical regression",
         "Chen et al, 2014",
         "Obst et al, 2021",
-        "Hierarchical",
+        "Zhang et al, 2025",
+        "Proposed (greedy)",
     ]
     secondary_axis = None
     uncertainty = False
@@ -116,6 +117,7 @@ if __name__ == "__main__":
         results=[res["error:"] for res in results],
         xlogscale=True,
         ylogscale=True,
+        start=START_PLOT,
         main_axis=main_axis,
         secondary_axis=secondary_axis,
         figsize=(3.75, 4.5),
@@ -136,6 +138,7 @@ if __name__ == "__main__":
         results=[res["mse:"] for res in results],
         xlogscale=True,
         ylogscale=True,
+        start=START_PLOT,
         main_axis=main_axis,
         secondary_axis=secondary_axis,
         figsize=(3.75, 4.5),

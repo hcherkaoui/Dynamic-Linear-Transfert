@@ -46,6 +46,7 @@ def plot_stats_evolution(
     filename_suffix="",
     verbose=False,
     ignore_nan=True,
+    start=0,
     ylim=None,
     ylim_secondary=None,
 ) -> str | Tuple[plt.Figure, plt.Axes]:
@@ -90,6 +91,8 @@ def plot_stats_evolution(
         If True, print info messages.
     ignore_nan
         If True, use nan-safe stats and warn once if NaNs are present.
+    start
+        Starting index for plotting (to skip initial points if desired).
     ylim
         (ymin, ymax) for the main (left) y-axis. If `ylogscale = True`,
         both bounds must be > 0.
@@ -150,8 +153,8 @@ def plot_stats_evolution(
 
         if ax_use is not None:
             ax_use.plot(
-                tt,
-                mean_stats,
+                tt[start:],
+                mean_stats[start:],
                 lw=lw,
                 color=color[0],
                 linestyle=linestyle[0],
@@ -160,9 +163,9 @@ def plot_stats_evolution(
             )
             if uncertainty:
                 ax_use.fill_between(
-                    tt,
-                    mean_stats - std_stats,
-                    mean_stats + std_stats,
+                    tt[start:],
+                    mean_stats[start:] - std_stats[start:],
+                    mean_stats[start:] + std_stats[start:],
                     color=color[0],
                     alpha=alpha / 3,
                 )

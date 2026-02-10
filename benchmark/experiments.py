@@ -10,11 +10,12 @@ from dyntr.regression import (
     chen_et_al_regression,
     dynamic_greedy_collaboration_regression,
     full_collaboration_regression,
-    hierical_regression,
+    hierarchical_regression,
     obst_et_al_regression,
     oracle_dynamic_collaboration_regression,
     source_single_regression,
     target_single_regression,
+    zhang_et_al_regression,
 )
 from config import get_config
 
@@ -318,11 +319,11 @@ def run_one_performance_comparison(
         ("Source-only ridge", "tab:blue", "dashed", source_single_regression),
         ("Mixed-task ridge", "tab:blue", "solid", full_collaboration_regression),
         ("Proposed (greedy)", "tab:orange", "solid", dynamic_greedy_collaboration_regression),
-        # ("Proposed (uniform)", "tab:olive", "dotted", dynamic_uniform_collaboration_regression),
         ("Proposed (oracle)", "tab:red", "solid", oracle_dynamic_collaboration_regression),
+        ("Zhang et al, 2025", "tab:purple", "solid", zhang_et_al_regression),
         ("Chen et al, 2014", "tab:gray", "solid", chen_et_al_regression),
         ("Obst et al, 2021", "tab:green", "solid", obst_et_al_regression),
-        ("Hierarchical", "tab:brown", "solid", hierical_regression),
+        ("Hierarchical regression", "tab:brown", "solid", hierarchical_regression),
     ]
     series = {name: {"err": [], "mse": [], "n_s": []} for name, *_ in methods}
 
@@ -344,7 +345,7 @@ def run_one_performance_comparison(
         kwargs["X_t_train"] = X_t_train[:n_t]
         kwargs["y_t_train"] = y_t_train[:n_t]
 
-        for name, _color, _style, fn in methods:
+        for name, _, _, fn in methods:
             theta, _, n_s = fn(**kwargs)
             series[name]["err"].append(_err(theta))
             series[name]["mse"].append(_mse(theta))

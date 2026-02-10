@@ -104,27 +104,26 @@ if __name__ == "__main__":
         delayed_runs.append(delayed(run_one_performance_comparison)(**kwargs))
 
     results = Parallel(verbose=args.joblib_verbose, n_jobs=N_JOBS)(delayed_runs)
-    results = [res["error:"] for res in results]
 
 ###############################################################################
 # Plotting
     main_axis = [
         "Target-only ridge",
         "Mixed-task ridge",
-        "Proposed (greedy)",
-        "Proposed (uniform)",
+        "Hierarchical regression",
         "Chen et al, 2014",
         "Obst et al, 2021",
+        "Proposed (greedy)",
     ]
     secondary_axis = None
     uncertainty = False
     plot_stats_evolution(
-        results=results,
+        results=[res["error:"] for res in results],
         xlogscale=True,
         ylogscale=False,
         main_axis=main_axis,
         secondary_axis=secondary_axis,
-        figsize=(4.0, 4.5),
+        figsize=(3.75, 4.5),
         uncertainty=uncertainty,
         title=args.dataset_name,
         xlabel=r"$n_T$",
@@ -134,7 +133,27 @@ if __name__ == "__main__":
         ncols_legend=2,
         legend_y_pad=1.25,
         figures_dir=FIGURES_DIR,
-        filename="5_performance_comparison",
+        filename="5_performance_error_comparison",
+        filename_suffix=f"__dataset_{args.dataset_name}",
+        verbose=True,
+    )
+    plot_stats_evolution(
+        results=[res["mse:"] for res in results],
+        xlogscale=True,
+        ylogscale=True,
+        main_axis=main_axis,
+        secondary_axis=secondary_axis,
+        figsize=(3.75, 4.5),
+        uncertainty=uncertainty,
+        title=args.dataset_name,
+        xlabel=r"$n_T$",
+        lw=LW,
+        alpha=ALPHA,
+        fontsize=FONTSIZE,
+        ncols_legend=2,
+        legend_y_pad=1.35,
+        figures_dir=FIGURES_DIR,
+        filename="5_performance_mse_comparison",
         filename_suffix=f"__dataset_{args.dataset_name}",
         verbose=True,
     )
