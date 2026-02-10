@@ -1,14 +1,48 @@
 """Utilities helpers module."""
-
-# Authors: Hamza Cherkaoui
-
 from __future__ import annotations
+
+import cProfile
 import os
 import random
-import subprocess
-import numpy as np
+import threading
+from typing import Optional, Sequence, Tuple
+
 import numba
+import numpy as np
+from numpy.typing import ArrayLike
+from sklearn.utils.validation import check_array
+
 from .statistics import opt_lambda
+
+
+_PROFILE_STATE = threading.local()
+
+
+def profile_me(func):
+    """Profiling decorator, produce a report <func-name>.profile to be open as.
+
+    Place @profile_me on top of the desired function, then:
+    "python -m snakeviz <func-name>.profile"
+    """
+
+    def profiled_func(*args, **kwargs):
+        if getattr(_PROFILE_STATE, "active", False):
+            return func(*args, **kwargs)
+        _PROFILE_STATE.active = True
+        try:
+            func_name = getattr(func, "__name__", func.__class__.__name__)
+            filename = func_name + ".profile"
+            prof = cProfile.Profile()
+            try:
+                ret = prof.runcall(func, *args, **kwargs)
+            except ValueError:
+                return func(*args, **kwargs)
+            prof.dump_stats(filename)
+            return ret
+        finally:
+            _PROFILE_STATE.active = False
+
+    return profiled_func
 
 
 def set_random_state(seed: int) -> None:
@@ -39,55 +73,33 @@ def format_duration(seconds: float) -> str:
     return f"{h:02d}h {m:02d}m {s:02d}s {int(1000.0 * ns):03d}ms"
 
 
-def print_dataset_info(X_t, y_t, X_s, y_s, X_t_val, X_t_test, theta_t, sigma_t, sigma_s) -> None:
+def print_dataset_info(
+    X_t,
+    y_t,
+    X_s,
+    y_s,
+    X_t_val,
+    X_t_test,
+    theta_t,
+    sigma_t,
+    sigma_s,
+) -> None:
     """Helper to print dataset statistics."""
     print(
-        f"[INFO] Dataset statistics:\n"
-        f"       d               = {X_t.shape[1]}\n"
-        f"       n_t             = {len(X_t)}\n"
-        f"       n_s             = {len(X_s)}\n"
-        f"       sigma_t         = {sigma_t:.2e}\n"
-        f"       sigma_s         = {sigma_s:.2e}\n"
-        f"       X_t shape       = {X_t.shape}, y_t shape = {y_t.shape}\n"
-        f"       X_s shape       = {X_s.shape}, y_s shape = {y_s.shape}\n"
-        f"       X_t_val shape   = {X_t_val.shape}\n"
-        f"       X_t_test shape  = {X_t_test.shape}\n"
-        f"       cond(X_t^T X_t) = {np.linalg.cond(X_t.T @ X_t):.2e}\n"
-        f"       cond(X_s^T X_s) = {np.linalg.cond(X_s.T @ X_s):.2e}\n"
-        f"       ||theta_t||^2   = {np.linalg.norm(theta_t):.2e}\n"
+        "[INFO] Dataset statistics:\n"
+        f"       d = {X_t.shape[1]}\n"
+        f"       n_t = {len(X_t)}\n"
+        f"       n_s = {len(X_s)}\n"
+        f"       sigma_t = {sigma_t:.2e}\n"
+        f"       sigma_s = {sigma_s:.2e}\n"
+        f"       X_t shape = {X_t.shape}, y_t shape = {y_t.shape}\n"
+        f"       X_s shape = {X_s.shape}, y_s shape = {y_s.shape}\n"
+        f"       X_t_val shape = {X_t_val.shape}\n"
+        f"       X_t_test shape = {X_t_test.shape}\n"
+        f"       cond(X_t^T X_t)  =  {np.linalg.cond(X_t.T @ X_t):.2e}\n"
+        f"       cond(X_s^T X_s)  =  {np.linalg.cond(X_s.T @ X_s):.2e}\n"
+        f"       ||theta_t||^2    =  {np.linalg.norm(theta_t):.2e}\n"
     )
-
-
-def crop_pdf(input_pdf: str, output_pdf: str | None = None, *, verbose: bool = True) -> bool:
-    """Crop a PDF file using pdfcrop (requires it to be installed)."""
-    if output_pdf is None:
-        output_pdf = input_pdf
-
-    if not os.path.exists(input_pdf):
-        if verbose:
-            print(f"[ERROR] Input PDF not found: {input_pdf}")
-        return False
-
-    if verbose:
-        print(f"[INFO] Cropping pdf file: {input_pdf}")
-
-    try:
-        _ = subprocess.run(
-            ["pdfcrop", input_pdf, output_pdf],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            check=True,
-            text=True,
-        )
-        return True
-    except subprocess.CalledProcessError as exc:
-        if verbose:
-            print(f"[ERROR] pdfcrop failed: {exc.stderr.strip()}")
-        return False
-    except FileNotFoundError:
-        if verbose:
-            print("[ERROR] 'pdfcrop' not found. Make sure TeX Live is installed.")
-        return False
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
@@ -95,10 +107,10 @@ def std_estimation(
     theta: np.ndarray,
     X: np.ndarray,
     y: np.ndarray,
-    mode: int = 0,
-    lbda: float = 0.0,
-    G: np.ndarray | None = None,
-    return_variance: bool = False,
+    mode=0,
+    lbda=0.0,
+    G=None,
+    return_variance=False,
 ) -> float:
     """Estimate residual noise (std or variance) for a linear model.
 
@@ -110,14 +122,14 @@ def std_estimation(
         Design matrix.
     y : ndarray of shape (n,)
         Targets.
-    mode : int, default=0
+    mode = 0
         Degrees-of-freedom mode. ``0``: OLS ``(n - d)``;
         ``1``: ridge effective DoF ``tr(A (A + lbda I)^{-1})``.
-    lbda : float, default=0.0
-        Ridge regularization parameter (used when ``mode=1``).
+    lbda = 0.0
+        Ridge regularization parameter (used when ``mode = 1``).
     G : ndarray of shape (d, d), optional
-        Gram matrix ``X^T X``. Must be provided when ``mode=1``.
-    return_variance : bool, default=False
+        Gram matrix ``X^T X``. Must be provided when ``mode = 1``.
+    return_variance = False
         If ``True``, return variance instead of standard deviation.
 
     Returns
@@ -221,80 +233,35 @@ def compute_exp_vars(
     }
 
 
-def _as_generator(rng: np.random.Generator | int | None) -> np.random.Generator:
-    """Return a numpy Generator from a seed or an existing Generator."""
-    if rng is None:
-        return np.random.default_rng()
-    if isinstance(rng, (int, np.integer)):
-        return np.random.default_rng(int(rng))
-    if isinstance(rng, np.random.Generator):
-        return rng
-    raise ValueError("rng must be None, an int seed, or a numpy.random.Generator.")
+def _as_1d_float(y: ArrayLike) -> np.ndarray:
+    return np.asarray(y, dtype=float).reshape(-1)
 
 
-def _center(
-    X: np.ndarray,
-    *,
-    center: bool = True,
-    mean: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Center rows of X and return (Xc, mean)."""
-    X = np.asarray(X)
-    if not center:
-        mu = np.zeros((X.shape[1],), dtype=X.dtype) if mean is None else np.asarray(mean, dtype=X.dtype)
-        return X, mu
-    mu = X.mean(axis=0) if mean is None else np.asarray(mean, dtype=X.dtype)
-    return X - mu, mu
+def _check_X(X: ArrayLike, *, n_features: Optional[int] = None) -> np.ndarray:
+    X = check_array(X, ensure_2d=True, dtype=float, accept_sparse=False)
+    if n_features is not None and X.shape[1] != n_features:
+        raise ValueError(
+            f"Incompatible feature dimension: got {X.shape[1]}, expected {n_features}."
+        )
+    return X
 
 
-def _safe_cholesky(A: np.ndarray, jitter: float = 1e-12, max_tries: int = 5) -> np.ndarray:
-    """Cholesky with diagonal jitter fallback."""
-    A = np.asarray(A)
-    for i in range(max_tries):
-        try:
-            return np.linalg.cholesky(A)
-        except np.linalg.LinAlgError:
-            A = A + (jitter * (10.0 ** i)) * np.eye(A.shape[0], dtype=A.dtype)
-    return np.linalg.cholesky(A)
+def _check_Xy(X: ArrayLike, y: ArrayLike) -> Tuple[np.ndarray, np.ndarray]:
+    X = _check_X(X)
+    y = _as_1d_float(y)
+    if X.shape[0] != y.shape[0]:
+        raise ValueError(
+            f"X and y have inconsistent shapes: {X.shape[0]} != {y.shape[0]}"
+        )
+    return X, y
 
 
-@numba.njit(cache=True, fastmath=True)
-def _row_norms_sq_numba(X: np.ndarray) -> np.ndarray:
-    n = X.shape[0]
-    out = np.empty(n, dtype=X.dtype)
-    for i in range(n):
-        s = 0.0
-        for j in range(X.shape[1]):
-            v = X[i, j]
-            s += v * v
-        out[i] = s
-    return out
-
-
-def _svec_psd(A: np.ndarray) -> np.ndarray:
-    """Symmetric vectorization with sqrt(2) for off-diagonals."""
-    A = np.asarray(A)
-    d = A.shape[0]
-    out = np.empty(d * (d + 1) // 2, dtype=A.dtype)
-    k = 0
-    for i in range(d):
-        for j in range(i, d):
-            if i == j:
-                out[k] = A[i, j]
-            else:
-                out[k] = np.sqrt(2.0) * A[i, j]
-            k += 1
-    return out
-
-
-@numba.njit(cache=True, fastmath=True)
-def _argmax_ignore_selected(values: np.ndarray, selected_mask: np.ndarray) -> int:
-    best = -1.0
-    best_i = -1
-    for i in range(values.shape[0]):
-        if selected_mask[i] == 0:
-            v = values[i]
-            if v > best:
-                best = v
-                best_i = i
-    return best_i
+def _stack_sources(
+    l_X: Sequence[ArrayLike],
+    l_y: Sequence[ArrayLike],
+) -> Tuple[np.ndarray, np.ndarray]:
+    if len(l_X) != len(l_y) or len(l_X) == 0:
+        raise ValueError("l_X and l_y must be non-empty lists of the same length.")
+    X = np.vstack([_check_X(Xi) for Xi in l_X]).astype(float, copy=False)
+    y = np.concatenate([_as_1d_float(yi) for yi in l_y]).astype(float, copy=False)
+    return _check_Xy(X, y)
