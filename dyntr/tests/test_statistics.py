@@ -1,14 +1,15 @@
 """Statistics test coverage for dyntr.statistics."""
-
 from __future__ import annotations
 
 import importlib
 import os
+
 import numpy as np
 
 os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
 
 import dyntr.statistics as stats  # noqa
+
 importlib.reload(stats)
 
 
@@ -26,7 +27,6 @@ def test_compute_delta_and_variance_are_finite():
     X_t, y_t, theta_t = _make_linear_data(rng, n=12, d=d, sigma=0.1)
     X_s, y_s, theta_s = _make_linear_data(rng, n=15, d=d, sigma=0.2)
     X_val = rng.normal(size=(8, d))
-
     lbda_t = 1.0
     lbda_s = 0.5
     lbda_c = lbda_t + lbda_s
@@ -80,7 +80,6 @@ def test_compute_delta_and_variance_are_finite():
         lbda_s=lbda_s,
         alpha=0.1,
     )
-
     assert np.isfinite(delta)
     assert np.isfinite(var)
     assert np.isfinite(delta_lb)
@@ -93,8 +92,6 @@ def test_opt_lambda_returns_value_in_grid():
     X, y, _ = _make_linear_data(rng, n=20, d=d, sigma=0.1)
     X_val = rng.normal(size=(10, d))
     y_val = X_val @ rng.normal(size=d) + 0.1 * rng.normal(size=10)
-
     grid = np.array([1e-3, 1e-2, 1e-1, 1.0])
     lbda = stats.opt_lambda(X=X, y=y, X_val=X_val, y_val=y_val, lbda_grid=grid)
-
     assert lbda in grid

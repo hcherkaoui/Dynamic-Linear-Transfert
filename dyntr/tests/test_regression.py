@@ -1,18 +1,17 @@
 """Regression test coverage for dyntr.regression."""
-
 import numpy as np
 import pytest
 
 from dyntr.regression import (
-    target_single_regression,
-    source_single_regression,
-    full_collaboration_regression,
-    dynamic_collaboration_regression,
-    oracle_dynamic_collaboration_regression,
     chen_et_al_regression,
-    obst_et_al_regression,
+    dynamic_greedy_collaboration_regression,
+    full_collaboration_regression,
     hierical_regression,
+    obst_et_al_regression,
+    oracle_dynamic_collaboration_regression,
     regression,
+    source_single_regression,
+    target_single_regression,
 )
 
 
@@ -37,7 +36,6 @@ def test_regression_modes_run():
     rng = np.random.default_rng(0)
     theta_t, _, X_t, X_s, y_t, y_s, X_t_val = _make_pair_data(rng)
     d = X_t.shape[1]
-
     lbda_t = 1.0
     lbda_s = 0.5
     lbda_c = lbda_t + lbda_s
@@ -99,7 +97,7 @@ def test_regression_modes_run():
     assert n_t == len(X_t)
     assert n_s == len(X_s)
 
-    theta, n_t, n_s = dynamic_collaboration_regression(
+    theta, n_t, n_s = dynamic_greedy_collaboration_regression(
         theta_t=theta_t,
         X_t_train=X_t,
         l_X_s=[X_s],
@@ -194,7 +192,6 @@ def test_regression_unknown_mode_raises():
     """Unknown regression mode should raise."""
     rng = np.random.default_rng(0)
     theta_t, _, X_t, X_s, y_t, y_s, X_t_val = _make_pair_data(rng)
-
     with pytest.raises(ValueError):
         regression(
             theta_t=theta_t,

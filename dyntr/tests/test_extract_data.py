@@ -1,5 +1,4 @@
 """Smoke test for dataset extraction."""
-
 from __future__ import annotations
 
 import subprocess
@@ -17,7 +16,6 @@ def test_extract_data_smoke(tmp_path: Path):
     env = dict(**{k: v for k, v in __import__("os").environ.items()})
     env["ZIP_PATH_OVERRIDE"] = str(zip_path)
     env["OUT_DIR_OVERRIDE"] = str(target)
-
     result = subprocess.run(cmd, env=env, capture_output=True, text=True)
     assert result.returncode == 0
     assert (target / "email" / "Hillstrom.csv").exists()

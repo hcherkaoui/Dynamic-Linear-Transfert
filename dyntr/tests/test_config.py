@@ -1,5 +1,4 @@
 """Tests for benchmark.config."""
-
 from benchmark.config import get_config
 
 

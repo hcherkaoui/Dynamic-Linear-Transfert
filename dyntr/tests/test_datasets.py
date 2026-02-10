@@ -1,36 +1,61 @@
 """Tests for dyntr.datasets with mocked CSV inputs."""
-
 from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 import pytest
-from dyntr.datasets import fetch_synthetic_datasets
-from dyntr.datasets._datasets import (
-    _load_hillstrom_dataset,
-    _load_boston_dataset,
-    _guess_column,
-    _autodetect_user_id,
-)
+
 import dyntr.datasets as datasets_mod
+from dyntr.datasets import fetch_synthetic_datasets
+from dyntr.datasets._datasets import _autodetect_user_id, _guess_column, _load_boston_dataset, _load_hillstrom_dataset
 
 
 def test_fetch_synthetic_datasets_basic():
-    data, meta = fetch_synthetic_datasets(
-        n_train_samples=20, n_val_samples=5, n_test_samples=5, d=4, n_sources=3
+    out = fetch_synthetic_datasets(
+        n_t_train=20,
+        n_t_val=5,
+        n_t_test=5,
+        n_s_train=20,
+        n_s_val=5,
+        n_s_test=5,
+        d=4,
+        n_sources=3,
     )
-    (X_t, l_X_s, y_t, l_y_s), (X_t_val, _, y_t_val, _), (X_t_test, _, y_t_test, _) = data
+    X_t, y_t = out["target_train"]
+    X_t_val, y_t_val = out["target_val"]
+    X_t_test, y_t_test = out["target_test"]
+    l_X_s, l_y_s = out["source_train"]
+    l_X_s_val, l_y_s_val = out["source_val"]
+    l_X_s_test, l_y_s_test = out["source_test"]
+    meta = out["meta"]
+
     assert X_t.shape == (20, 4)
-    assert isinstance(l_X_s, list)
-    assert len(l_X_s) == 3
-    assert l_X_s[0].shape == (20, 4)
     assert y_t.shape == (20,)
-    assert isinstance(l_y_s, list)
-    assert len(l_y_s) == 3
-    assert l_y_s[0].shape == (20,)
     assert X_t_val.shape == (5, 4)
     assert y_t_val.shape == (5,)
     assert X_t_test.shape == (5, 4)
     assert y_t_test.shape == (5,)
+
+    assert isinstance(l_X_s, list)
+    assert len(l_X_s) == 3
+    assert l_X_s[0].shape == (20, 4)
+
+    assert isinstance(l_y_s, list)
+    assert len(l_y_s) == 3
+    assert l_y_s[0].shape == (20,)
+
+    assert len(l_X_s_val) == 3
+    assert l_X_s_val[0].shape == (5, 4)
+
+    assert len(l_y_s_val) == 3
+    assert l_y_s_val[0].shape == (5,)
+
+    assert len(l_X_s_test) == 3
+    assert l_X_s_test[0].shape == (5, 4)
+
+    assert len(l_y_s_test) == 3
+    assert l_y_s_test[0].shape == (5,)
+
     assert meta["theta_t"].shape == (4,)
     assert meta["theta_s"].shape == (4,)
 
@@ -39,7 +64,7 @@ def test_fetch_synthetic_datasets_invalid():
     with pytest.raises(ValueError):
         fetch_synthetic_datasets(d=0)
     with pytest.raises(ValueError):
-        fetch_synthetic_datasets(n_train_samples=0)
+        fetch_synthetic_datasets(n_t_train=0)
     with pytest.raises(ValueError):
         fetch_synthetic_datasets(d=1, eps=0.5)
 
@@ -50,20 +75,37 @@ def test_fetch_real_datasets_mocked(monkeypatch):
     y = rng.normal(size=10)
     train_data = (X[:5], y[:5]), (X[5:], y[5:])
     test_data = (X[:3], y[:3]), (X[3:6], y[3:6])
-
     monkeypatch.setattr(datasets_mod, "_load_boston_dataset", lambda: (train_data, test_data))
+
     out = datasets_mod.fetch_real_datasets(
-        "boston", n_train_samples=4, n_test_samples=2, only_train=True, n_sources=2
+        "boston",
+        n_t_train=3,
+        n_t_val=1,
+        n_t_test=2,
+        n_s_train=3,
+        n_s_val=1,
+        n_s_test=2,
+        n_sources=2,
+        permutation=True,
+        sigma_t=0.0,
+        sigma_s=0.0,
+        random_state=0,
     )
-    X_t, l_X_s, y_t, l_y_s = out
-    assert X_t.shape[0] == 4
+    X_t, l_X_s, y_t, l_y_s = (
+        out["target_train"][0],
+        out["source_train"][0],
+        out["target_train"][1],
+        out["source_train"][1],
+    )
+
+    assert X_t.shape[0] == 3
     assert isinstance(l_X_s, list)
     assert len(l_X_s) == 2
-    assert l_X_s[0].shape[0] == 4
-    assert y_t.shape[0] == 4
+    assert l_X_s[0].shape[0] == 3
+    assert y_t.shape[0] == 3
     assert isinstance(l_y_s, list)
     assert len(l_y_s) == 2
-    assert l_y_s[0].shape[0] == 4
+    assert l_y_s[0].shape[0] == 3
 
     with pytest.raises(ValueError):
         datasets_mod.fetch_real_datasets("unknown")
