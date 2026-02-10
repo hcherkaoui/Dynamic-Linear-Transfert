@@ -5,7 +5,7 @@ from dyntr.regression import (
     chen_et_al_regression,
     dynamic_greedy_collaboration_regression,
     full_collaboration_regression,
-    hierical_regression,
+    hierarchical_regression,
     obst_et_al_regression,
     oracle_dynamic_collaboration_regression,
     regression,
@@ -168,7 +168,7 @@ def test_regression_modes_run():
     assert n_t == len(X_t)
     assert isinstance(n_s, int)
 
-    theta, n_t, n_s = hierical_regression(
+    theta, n_t, n_s = hierarchical_regression(
         theta_t=theta_t,
         X_t_train=X_t,
         l_X_s=[X_s],

@@ -2,7 +2,7 @@
 from __future__ import annotations
 import numpy as np
 import pytest
-from dyntr.augmenter import OracleSampleAugmenter, SampleAugmenter
+from dyntr.augmenter import OracleSampleAugmenter, SampleAugmenter, UOWQSampleAugmenter
 
 
 def _make_data(rng, n_t=20, n_s=30, d=5):
@@ -66,3 +66,14 @@ def test_oracle_greedy_sample_augmenter_bad_shapes():
     aug.fit(X_t, y_t, X_t_val, lbda=1.0, theta_t_true=theta_t)
     with pytest.raises(ValueError):
         aug.transform([X_s[:, :-1]], [y_s], lbda=1.0)
+
+
+def test_uowq_sample_augmenter_fit_transform():
+    rng = np.random.default_rng(3)
+    X_t, y_t, X_s, y_s, X_t_val, _ = _make_data(rng)
+    aug = UOWQSampleAugmenter(n_max=8, n_iter_qp=50, random_state=0)
+    aug.fit(X_t, y_t, X_t_val, lbda=1.0, sigma=0.1)
+    Xc, yc = aug.transform([X_s], [y_s], lbda=0.5, sigma=0.2)
+    assert Xc.shape[0] == yc.shape[0]
+    assert Xc.shape[1] == X_t.shape[1]
+    assert aug.get_n_selected() >= 0
