@@ -1,14 +1,14 @@
 """Regression module."""
-
-# Authors: Hamza Cherkaoui
-
 from __future__ import annotations
+
 from functools import partial
 from textwrap import dedent
 from typing import Tuple
-import numpy as np
+
 import numba
-from .preprocessing import GreedySampleAugmenter, OracleGreedySampleAugmenter
+import numpy as np
+
+from .augmenter import OracleSampleAugmenter, SampleAugmenter
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
@@ -24,7 +24,7 @@ def _ridge(
 def _fit_stats(
     X: np.ndarray,
     y: np.ndarray,
-    lbda: float
+    lbda: float,
 ):
     n, d = X.shape
     G = X.T @ X + lbda * np.eye(d)
@@ -35,6 +35,7 @@ def _fit_stats(
     return theta, G, G_inv, s2, n, d
 
 
+@numba.jit(nopython=True, cache=True, fastmath=True)
 def _default_alpha(
     G: np.ndarray,
     factor: float = 10.0,
@@ -45,6 +46,7 @@ def _default_alpha(
     return 2.0 / (lam_max + lam_min) / factor
 
 
+@numba.jit(nopython=True, cache=True, fastmath=True)
 def _make_cache(
     G_t: np.ndarray,
     alpha: float,
@@ -272,12 +274,12 @@ def regression(
     lbda_s: float,
     lbda_c: float,
     alpha: float = 0.05,
-    mode: str = "dynamic",
+    mode: str = "dynamic-greedy",
+    chunk_size: int = 5,
 ) -> Tuple[np.ndarray, int, int]:
     """Dispatch regression modes and return (theta, n_t, n_s)."""
 
     if mode == "target":
-        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
         return _ridge(X_t_train, y_t_train, lbda_t), len(X_t_train), 0
 
     if mode == "source":
@@ -286,10 +288,13 @@ def regression(
 
     if mode == "full":
         X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
-        return _ridge(np.r_[X_t_train, X_s], np.r_[y_t_train, y_s], lbda_c), len(X_t_train), len(X_s)
+        X_c = np.r_[X_t_train, X_s]
+        y_c = np.r_[y_t_train, y_s]
+        return _ridge(X_c, y_c, lbda_c), len(X_t_train), len(X_s)
 
-    if mode == "dynamic":
-        aug = GreedySampleAugmenter(alpha=alpha)
+    if mode in {"dynamic", "dynamic-greedy", "dynamic-uniform"}:
+        strategy = "greedy" if mode in {"dynamic", "dynamic-greedy"} else "uniform"
+        aug = SampleAugmenter(alpha=alpha, strategy=strategy, chunk_size=chunk_size)
         aug = aug.fit(
             X_t_train,
             y_t_train,
@@ -306,7 +311,7 @@ def regression(
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(aug.get_n_selected())
 
     if mode == "oracle_dynamic":
-        ora = OracleGreedySampleAugmenter()
+        ora = OracleSampleAugmenter()
         ora = ora.fit(
             X_t_train,
             y_t_train,
@@ -340,8 +345,10 @@ def regression(
             eye,
             lbda_grid,
         )
-        W = np.linalg.solve(G_t + lbda * (G_t_val @ G_s_inv_G_t) + lbda * G_t_val,
-                            G_t + lbda * (G_t_val @ G_s_inv_G_t))
+        W = np.linalg.solve(
+            G_t + lbda * (G_t_val @ G_s_inv_G_t) + lbda * G_t_val,
+            G_t + lbda * (G_t_val @ G_s_inv_G_t),
+        )
         return W @ theta_t_ + (eye - W) @ theta_s_, len(X_t_train), len(X_s)
 
     if mode == "obst_et_al":
@@ -378,7 +385,8 @@ def regression(
 target_single_regression = partial(regression, mode="target")
 source_single_regression = partial(regression, mode="source")
 full_collaboration_regression = partial(regression, mode="full")
-dynamic_collaboration_regression = partial(regression, mode="dynamic")
+dynamic_greedy_collaboration_regression = partial(regression, mode="dynamic-greedy")
+dynamic_uniform_collaboration_regression = partial(regression, mode="dynamic-uniform")
 oracle_dynamic_collaboration_regression = partial(regression, mode="oracle_dynamic")
 chen_et_al_regression = partial(regression, mode="chen_et_al")
 obst_et_al_regression = partial(regression, mode="obst_et_al")
@@ -387,7 +395,8 @@ hierical_regression = partial(regression, mode="hierical")
 target_single_regression.__doc__ = _REGR_DOC
 source_single_regression.__doc__ = _REGR_DOC
 full_collaboration_regression.__doc__ = _REGR_DOC
-dynamic_collaboration_regression.__doc__ = _REGR_DOC
+dynamic_greedy_collaboration_regression.__doc__ = _REGR_DOC
+dynamic_uniform_collaboration_regression.__doc__ = _REGR_DOC
 oracle_dynamic_collaboration_regression.__doc__ = _REGR_DOC
 chen_et_al_regression.__doc__ = _REGR_DOC
 obst_et_al_regression.__doc__ = _REGR_DOC
@@ -397,7 +406,8 @@ __all__ = [
     "target_single_regression",
     "source_single_regression",
     "full_collaboration_regression",
-    "dynamic_collaboration_regression",
+    "dynamic_greedy_collaboration_regression",
+    "dynamic_uniform_collaboration_regression",
     "oracle_dynamic_collaboration_regression",
     "chen_et_al_regression",
     "obst_et_al_regression",
