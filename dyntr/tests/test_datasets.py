@@ -1,10 +1,8 @@
 """Tests for dyntr.datasets with mocked CSV inputs."""
 from __future__ import annotations
-
 import numpy as np
 import pandas as pd
 import pytest
-
 import dyntr.datasets as datasets_mod
 from dyntr.datasets import fetch_synthetic_datasets
 from dyntr.datasets._datasets import _autodetect_user_id, _guess_column, _load_boston_dataset, _load_hillstrom_dataset

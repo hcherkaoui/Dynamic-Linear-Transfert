@@ -1,9 +1,7 @@
 """Statistics test coverage for dyntr.statistics."""
 from __future__ import annotations
-
 import importlib
 import os
-
 import numpy as np
 
 os.environ.setdefault("NUMBA_DISABLE_JIT", "1")

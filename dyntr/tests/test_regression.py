@@ -1,7 +1,6 @@
 """Regression test coverage for dyntr.regression."""
 import numpy as np
 import pytest
-
 from dyntr.regression import (
     chen_et_al_regression,
     dynamic_greedy_collaboration_regression,

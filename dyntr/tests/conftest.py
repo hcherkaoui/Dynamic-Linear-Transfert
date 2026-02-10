@@ -1,8 +1,6 @@
 """Pytest configuration for dyntr tests."""
 from __future__ import annotations
-
 import os
-
 import numba
 
 

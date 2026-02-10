@@ -1,9 +1,7 @@
 """Tests for dyntr.augmenter."""
 from __future__ import annotations
-
 import numpy as np
 import pytest
-
 from dyntr.augmenter import OracleSampleAugmenter, SampleAugmenter
 
 
