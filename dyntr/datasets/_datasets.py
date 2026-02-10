@@ -1,15 +1,14 @@
 """Datasets module."""
-
-# Authors: Hamza Cherkaoui
-
 from __future__ import annotations
+
 import os
-from typing import Tuple, Literal, Optional, Iterable
+from typing import Iterable, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 from sklearn.datasets import fetch_california_housing
-from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,10 +31,10 @@ def _condition_blocks(
     X1_te: np.ndarray,
     X2_te: np.ndarray,
     *,
-    pca_var_threshold: float = 0.99,
-    standardize: bool = True,
-    var_threshold: float = 1e-12,
-    add_intercept: bool = False
+    pca_var_threshold=0.99,
+    standardize=True,
+    var_threshold=1e-12,
+    add_intercept=False,
 ):
     """
     Condition the two design matrices jointly (fit transforms on TRAIN only).
@@ -53,7 +52,6 @@ def _condition_blocks(
 
     mu = Xtr_all.mean(axis=0)
     std = Xtr_all.std(axis=0, ddof=0)
-
     keep_var = std > var_threshold
     if not np.all(keep_var):
         X1_tr = X1_tr[:, keep_var]
@@ -84,7 +82,6 @@ def _condition_blocks(
     X2_tr = np.ascontiguousarray(X2_tr, dtype=np.float64)
     X1_te = np.ascontiguousarray(X1_te, dtype=np.float64)
     X2_te = np.ascontiguousarray(X2_te, dtype=np.float64)
-
     return X1_tr, X2_tr, X1_te, X2_te
 
 
@@ -102,20 +99,19 @@ def _load_boston_dataset():
     data = fetch_california_housing()
     X_full = data.data.astype(np.float64)
     y_full = data.target.astype(np.float64)
-
     n = len(y_full)
     split = n // 2
 
-    X1_train, y1_train = X_full[:split // 2], y_full[:split // 2]
+    X1_train, y1_train = X_full[: split // 2], y_full[: split // 2]
     X2_train, y2_train = X_full[split // 2:split], y_full[split // 2:split]
-
-    X1_test, y1_test = X_full[split:split + (n - split) // 2], y_full[split:split + (n - split) // 2]
+    X1_test, y1_test = X_full[split: split + (n - split) // 2], y_full[
+        split: split + (n - split) // 2
+    ]
     X2_test, y2_test = X_full[split + (n - split) // 2:], y_full[split + (n - split) // 2:]
 
     scaler = StandardScaler()
     X_all = np.vstack([X1_train, X2_train, X1_test, X2_test])
     scaler.fit(X_all)
-
     X1_train = scaler.transform(X1_train)
     X2_train = scaler.transform(X2_train)
     X1_test = scaler.transform(X1_test)
@@ -123,16 +119,15 @@ def _load_boston_dataset():
 
     train_data = (X1_train, y1_train), (X2_train, y2_train)
     test_data = (X1_test, y1_test), (X2_test, y2_test)
-
     return train_data, test_data
 
 
 def _load_hillstrom_dataset(
-    data_dir: str = os.path.join(DATA_DIR, "data"),
-    filename: str = "Hillstrom.csv",
-    target: Literal["spend", "visit", "conversion"] = "spend",
-    split: Literal["existing_vs_new", "womens_vs_control", "high_value_vs_low_value"] = "high_value_vs_low_value",
-    pct_high_value: float = 0.3,
+    data_dir=os.path.join(DATA_DIR, "data"),
+    filename="Hillstrom.csv",
+    target="spend",
+    split="high_value_vs_low_value",
+    pct_high_value=0.3,
 ) -> Tuple[
     Tuple[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]],
     Tuple[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]],
@@ -167,11 +162,11 @@ def _load_hillstrom_dataset(
 
     if split == "existing_vs_new":
         if "history" not in df.columns:
-            raise ValueError("Column 'history' is required for split='existing_vs_new'.")
+            raise ValueError("Column 'history' is required for split = 'existing_vs_new'.")
         mask = df["history"].to_numpy(dtype=float) > 0.0
     elif split == "womens_vs_control":
         if "segment" not in df.columns:
-            raise ValueError("Column 'segment' is required for split='womens_vs_control'.")
+            raise ValueError("Column 'segment' is required for split = 'womens_vs_control'.")
         mask = df["segment"].astype(str).str.contains("Wom", case=False, regex=False).to_numpy()
         ctrl = df["segment"].astype(str).str.contains("Control", case=False, regex=False).to_numpy()
         if ctrl.sum() == 0:
@@ -180,7 +175,7 @@ def _load_hillstrom_dataset(
         comp_mask = ctrl
     elif split == "high_value_vs_low_value":
         if "history" not in df.columns:
-            raise ValueError("Column 'history' is required for split='high_value_vs_low_value'.")
+            raise ValueError("Column 'history' is required for split = 'high_value_vs_low_value'.")
         q = np.quantile(df["history"].to_numpy(dtype=float), 1.0 - float(pct_high_value))
         mask = df["history"].to_numpy(dtype=float) >= q
     else:
@@ -195,18 +190,16 @@ def _load_hillstrom_dataset(
     n1, n2 = len(y1), len(y2)
     if n1 == 0 or n2 == 0:
         raise ValueError("One cluster is empty after the split.")
-    n1_train, n2_train = n1 // 2, n2 // 2
 
+    n1_train, n2_train = n1 // 2, n2 // 2
     X1_train, y1_train = X1[:n1_train], y1[:n1_train]
     X1_test, y1_test = X1[n1_train:], y1[n1_train:]
-
     X2_train, y2_train = X2[:n2_train], y2[:n2_train]
     X2_test, y2_test = X2[n2_train:], y2[n2_train:]
 
     scaler = StandardScaler()
     X_all = np.vstack([X1_train, X2_train, X1_test, X2_test])
     scaler.fit(X_all)
-
     X1_train = scaler.transform(X1_train)
     X2_train = scaler.transform(X2_train)
     X1_test = scaler.transform(X1_test)
@@ -214,15 +207,14 @@ def _load_hillstrom_dataset(
 
     train_data = (X1_train, y1_train), (X2_train, y2_train)
     test_data = (X1_test, y1_test), (X2_test, y2_test)
-
     return train_data, test_data
 
 
 def _guess_column(
     df: pd.DataFrame,
     candidates: Iterable[str],
-    required: bool = True,
-    case_insensitive: bool = True,
+    required=True,
+    case_insensitive=True,
 ) -> Optional[str]:
     cols = list(df.columns)
     if case_insensitive:
@@ -235,6 +227,7 @@ def _guess_column(
         for cand in candidates:
             if cand in df.columns:
                 return cand
+
     if required:
         raise ValueError(
             "None of the candidate columns found. "
@@ -245,8 +238,17 @@ def _guess_column(
 
 def _autodetect_user_id(purchases: pd.DataFrame, survey: pd.DataFrame) -> str:
     id_candidates = [
-        "user_id", "userid", "user", "id", "uid", "profile_id", "respondent_id",
-        "participant_id", "customer_id", "account_id", "member_id",
+        "user_id",
+        "userid",
+        "user",
+        "id",
+        "uid",
+        "profile_id",
+        "respondent_id",
+        "participant_id",
+        "customer_id",
+        "account_id",
+        "member_id",
     ]
     purch_id = None
     surv_id = None
@@ -255,6 +257,7 @@ def _autodetect_user_id(purchases: pd.DataFrame, survey: pd.DataFrame) -> str:
         purch_id = _guess_column(purchases, id_candidates, required=False)
     except ValueError:
         purch_id = None
+
     try:
         surv_id = _guess_column(survey, id_candidates, required=False)
     except ValueError:
@@ -266,7 +269,6 @@ def _autodetect_user_id(purchases: pd.DataFrame, survey: pd.DataFrame) -> str:
     inter = set(c.lower() for c in purchases.columns) & set(c.lower() for c in survey.columns)
     inter_idlike = [c for c in inter if any(tok in c for tok in ["id", "user", "uid", "account", "profile"])]
     inter_scan = inter_idlike if inter_idlike else list(inter)
-
     if inter_scan:
         surv_lower = {c.lower(): c for c in survey.columns}
         for c in inter_scan:
@@ -285,5 +287,5 @@ def _autodetect_user_id(purchases: pd.DataFrame, survey: pd.DataFrame) -> str:
         "Could not auto-detect a common user ID column present in both files.\n"
         f"Purchases columns: {list(purchases.columns)}\n"
         f"Survey columns:    {list(survey.columns)}\n"
-        "Pass user_id_col='...' explicitly."
+        "Pass user_id_col = '...' explicitly."
     )
