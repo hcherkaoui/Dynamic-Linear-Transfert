@@ -51,3 +51,7 @@ If you use this code in your research, please cite:
 ## License
 
 This project is released under the MIT License. See [LICENSE](LICENSE) for details.
+
+## Authors
+
+- **Hamza Cherkaoui** - hamza.cherkaoui@telecom-sudparis.eu
