@@ -9,6 +9,9 @@ launcher:
   n_runs: 1
   seed: 4578902
 
+model:
+  alpha: 0.01
+
 data:
   l_eps:
     start: -2

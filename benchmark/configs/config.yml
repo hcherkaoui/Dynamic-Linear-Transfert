@@ -6,8 +6,11 @@ plotting:
 
 launcher:
   n_jobs: 25
-  n_runs: 250
+  n_runs: 150
   seed: 4578902
+
+model:
+  alpha: 0.01
 
 data:
   l_eps:
@@ -23,5 +26,5 @@ data:
   n_points: 10
   sigma: 1.0
   d: 50
-  eps_list: "1.0 0.5 0.1"
+  eps_list: "0.5 0.25 0.1"
   lbda_default: 1.0
