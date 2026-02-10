@@ -114,7 +114,7 @@ PY
 }
 
 read -r -a eps_list <<<"$(yaml_val data.eps_list)"
-alpha=0.0
+alpha=0.05
 n_t="$(yaml_val data.n_t)"
 n_s="$(yaml_val data.n_train_samples)"
 joblib_verbose=10

@@ -1,13 +1,9 @@
 """Collaboration criteria illustration."""
 from __future__ import annotations
-
 import argparse
 import time
-
 from joblib import Parallel, delayed
-
 from dyntr.utils import format_duration, set_random_state
-
 from config import get_config
 from experiments import run_one_epsilon_influence
 from plotting import plot_stats_evolution

@@ -1,12 +1,10 @@
 """Configuration loader."""
 from __future__ import annotations
-
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import os
 from typing import Any, Mapping
-
 import numpy as np
 import yaml
 

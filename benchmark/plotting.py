@@ -1,13 +1,10 @@
 """Plotting module."""
 from __future__ import annotations
-
 from pathlib import Path
 from typing import Iterable, Tuple
-
 import matplotlib.pyplot as plt
 from matplotlib import ticker
 import numpy as np
-
 from config import get_config
 
 

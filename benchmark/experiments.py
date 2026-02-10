@@ -9,7 +9,6 @@ from dyntr.utils import check_random_state
 from dyntr.regression import (
     chen_et_al_regression,
     dynamic_greedy_collaboration_regression,
-    dynamic_uniform_collaboration_regression,
     full_collaboration_regression,
     hierical_regression,
     obst_et_al_regression,

@@ -1,15 +1,11 @@
 """Collaboration criteria illustration."""
 from __future__ import annotations
-
 import argparse
 import time
-
 import numpy as np
 from joblib import Parallel, delayed
-
 from dyntr.datasets import fetch_synthetic_datasets
 from dyntr.utils import format_duration, print_dataset_info, set_random_state
-
 from config import get_config
 from experiments import run_one_delta_illustration
 from plotting import plot_stats_evolution
