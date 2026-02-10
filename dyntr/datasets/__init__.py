@@ -1,10 +1,7 @@
 """Datasets module."""
 from __future__ import annotations
-
 from typing import Any, Dict, Tuple
-
 import numpy as np
-
 from ._datasets import _assert_is_regression, _condition_blocks
 from ._datasets import _load_boston_dataset, _load_hillstrom_dataset
 

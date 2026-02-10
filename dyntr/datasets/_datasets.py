@@ -1,9 +1,7 @@
 """Datasets module."""
 from __future__ import annotations
-
 import os
 from typing import Iterable, Optional, Tuple
-
 import numpy as np
 import pandas as pd
 from sklearn.datasets import fetch_california_housing
