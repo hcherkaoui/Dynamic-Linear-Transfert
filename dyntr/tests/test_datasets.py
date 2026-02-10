@@ -4,8 +4,15 @@ import numpy as np
 import pandas as pd
 import pytest
 import dyntr.datasets as datasets_mod
-from dyntr.datasets import fetch_synthetic_datasets
-from dyntr.datasets._datasets import _autodetect_user_id, _guess_column, _load_boston_dataset, _load_hillstrom_dataset
+from dyntr.datasets import fetch_synthetic_datasets, generate_thetas
+from dyntr.datasets._datasets import (
+    _assert_is_regression,
+    _autodetect_user_id,
+    _condition_blocks,
+    _guess_column,
+    _load_boston_dataset,
+    _load_hillstrom_dataset,
+)
 
 
 def test_fetch_synthetic_datasets_basic():
@@ -65,6 +72,71 @@ def test_fetch_synthetic_datasets_invalid():
         fetch_synthetic_datasets(n_t_train=0)
     with pytest.raises(ValueError):
         fetch_synthetic_datasets(d=1, eps=0.5)
+    with pytest.raises(ValueError):
+        fetch_synthetic_datasets(n_s_train=0)
+    with pytest.raises(ValueError):
+        fetch_synthetic_datasets(sigma_t=-0.1)
+    with pytest.raises(ValueError):
+        fetch_synthetic_datasets(theta_t_and_theta_s=(np.zeros(3), np.zeros(2)), d=3)
+
+
+def test_generate_thetas_validation():
+    with pytest.raises(ValueError):
+        generate_thetas(0, 0.5)
+    with pytest.raises(ValueError):
+        generate_thetas(2, -0.1)
+
+    theta_s, theta_t = generate_thetas(3, 0.0, random_state=0)
+    assert theta_s.shape == (3,)
+    assert theta_t.shape == (3,)
+    assert np.isclose(np.linalg.norm(theta_s - theta_t), 0.0)
+
+    rng = np.random.default_rng(123)
+    theta_s, theta_t = generate_thetas(2, 0.1, random_state=rng)
+    assert theta_s.shape == (2,)
+    assert theta_t.shape == (2,)
+
+
+def test_condition_blocks_intercept_and_variance():
+    X1_tr = np.array([[1.0, 0.0], [1.0, 0.0]])
+    X2_tr = np.array([[2.0, 0.0], [2.0, 0.0]])
+    X1_te = np.array([[1.5, 0.0]])
+    X2_te = np.array([[2.5, 0.0]])
+
+    X1_tr_c, X2_tr_c, X1_te_c, X2_te_c = _condition_blocks(
+        X1_tr,
+        X2_tr,
+        X1_te,
+        X2_te,
+        pca_var_threshold=None,
+        standardize=False,
+        var_threshold=1e-6,
+        add_intercept=True,
+    )
+    assert X1_tr_c.shape[1] == X2_tr_c.shape[1]
+    assert X1_te_c.shape[1] == X2_te_c.shape[1]
+    assert X1_tr_c.shape[1] >= 1
+
+
+def test_assert_is_regression_rejects_binary():
+    y = np.array([0.0, 1.0, 0.0, 1.0])
+    with pytest.raises(AssertionError):
+        _assert_is_regression(y, "y")
+
+
+def test_bootstrap_sources_behavior(monkeypatch):
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(5, 2))
+    y = rng.normal(size=5)
+    l_X, l_y = datasets_mod._bootstrap_sources(X, y, n_sources=1, rng=rng)
+    assert len(l_X) == 1
+    assert len(l_y) == 1
+    assert l_X[0].shape == X.shape
+    assert l_y[0].shape == y.shape
+
+    l_X2, l_y2 = datasets_mod._bootstrap_sources(X, y, n_sources=2, rng=rng)
+    assert len(l_X2) == 2
+    assert len(l_y2) == 2
 
 
 def test_fetch_real_datasets_mocked(monkeypatch):
@@ -108,6 +180,36 @@ def test_fetch_real_datasets_mocked(monkeypatch):
     with pytest.raises(ValueError):
         datasets_mod.fetch_real_datasets("unknown")
 
+    with pytest.raises(ValueError):
+        datasets_mod.fetch_real_datasets(
+            "boston",
+            n_t_train=1,
+            n_t_val=0,
+            n_t_test=1,
+            n_s_train=1,
+            n_s_val=0,
+            n_s_test=1,
+            n_sources=0,
+            permutation=False,
+        )
+
+    out = datasets_mod.fetch_real_datasets(
+        "boston",
+        n_t_train=2,
+        n_t_val=0,
+        n_t_test=1,
+        n_s_train=2,
+        n_s_val=0,
+        n_s_test=1,
+        n_sources=1,
+        permutation=True,
+        sigma_t=0.1,
+        sigma_s=0.1,
+        random_state=0,
+    )
+    assert out["target_val"][0].shape[0] == 0
+    assert out["source_val"][0][0].shape[0] == 0
+
 
 def test_load_hillstrom_dataset_mocked(monkeypatch):
     df = pd.DataFrame(
@@ -145,6 +247,37 @@ def test_load_hillstrom_dataset_mocked(monkeypatch):
         _load_hillstrom_dataset(split="unknown_split")
 
 
+def test_load_hillstrom_dataset_missing_columns(monkeypatch):
+    df = pd.DataFrame({"history": [1.0, 2.0], "segment": ["A", "B"]})
+
+    def _fake_read_csv(_path):
+        return df.copy()
+
+    monkeypatch.setattr(pd, "read_csv", _fake_read_csv)
+    monkeypatch.setattr("os.path.exists", lambda _p: True)
+
+    with pytest.raises(ValueError):
+        _load_hillstrom_dataset(target="spend")
+
+    df2 = pd.DataFrame({"spend": [0.1, 0.2], "segment": ["Womens", "Control"]})
+
+    def _fake_read_csv2(_path):
+        return df2.copy()
+
+    monkeypatch.setattr(pd, "read_csv", _fake_read_csv2)
+    with pytest.raises(ValueError):
+        _load_hillstrom_dataset(split="existing_vs_new")
+
+    df3 = pd.DataFrame({"spend": [0.1, 0.2], "history": [0.0, 1.0]})
+
+    def _fake_read_csv3(_path):
+        return df3.copy()
+
+    monkeypatch.setattr(pd, "read_csv", _fake_read_csv3)
+    with pytest.raises(ValueError):
+        _load_hillstrom_dataset(split="womens_vs_control")
+
+
 def test_load_boston_dataset_mocked(monkeypatch):
     class _Bunch:
         def __init__(self, data, target):
@@ -172,3 +305,17 @@ def test_guess_column_and_autodetect_user_id():
     survey = pd.DataFrame({"user_id": [1, 2], "age": [30, 40]})
     detected = _autodetect_user_id(purchases, survey)
     assert detected.lower() == "user_id"
+
+    df = pd.DataFrame({"x": [1, 2]})
+    col = _guess_column(df, ["missing"], required=False, case_insensitive=True)
+    assert col is None
+
+    purchases = pd.DataFrame({"alpha": [1, 2], "beta": [3, 4]})
+    survey = pd.DataFrame({"beta": [1, 2], "gamma": [3, 4]})
+    detected = _autodetect_user_id(purchases, survey)
+    assert detected.lower() == "beta"
+
+    purchases = pd.DataFrame({"a": [1, 2]})
+    survey = pd.DataFrame({"b": [3, 4]})
+    with pytest.raises(ValueError):
+        _autodetect_user_id(purchases, survey)
