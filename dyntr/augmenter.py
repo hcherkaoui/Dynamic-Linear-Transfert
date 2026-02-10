@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 import numba
 import numpy as np
 from numpy.typing import ArrayLike
@@ -55,6 +55,109 @@ def _prepare_sources(
         Xs.append(X)
         ys.append(y)
     return Xs, ys
+
+
+def prepare_sources(
+    l_X: Sequence[ArrayLike],
+    l_y: Sequence[ArrayLike],
+    n_features: int,
+    rng: np.random.RandomState,
+) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+    if len(l_X) != len(l_y):
+        raise ValueError("l_X and l_y must have the same length.")
+    Xs = []
+    ys = []
+    for X, y in zip(l_X, l_y):
+        X = _check_X(np.asarray(X), n_features=n_features)
+        y = np.asarray(y, dtype=float).reshape(-1)
+        if X.shape[0] != y.shape[0]:
+            raise ValueError("A source dataset has X and y with mismatched lengths.")
+        X, y = _permute(rng, X, y)
+        Xs.append(X)
+        ys.append(y)
+    return Xs, ys
+
+
+def project_simplex(v: np.ndarray) -> np.ndarray:
+    v = np.asarray(v, dtype=float).reshape(-1)
+    n = v.size
+    u = np.sort(v)[::-1]
+    cssv = np.cumsum(u)
+    rho = np.nonzero(u * np.arange(1, n + 1) > (cssv - 1.0))[0]
+    if rho.size == 0:
+        return np.full(n, 1.0 / n)
+    rho = int(rho[-1])
+    theta = (cssv[rho] - 1.0) / float(rho + 1)
+    w = np.maximum(v - theta, 0.0)
+    s = w.sum()
+    return w / s if s > 0 else np.full(n, 1.0 / n)
+
+
+def solve_simplex_qp(
+    M: np.ndarray,
+    n_iter: int = 400,
+    tol: float = 1e-10,
+) -> np.ndarray:
+    M = 0.5 * (M + M.T)
+    k = M.shape[0]
+    if k == 1:
+        return np.array([1.0])
+    eig_max = float(np.max(np.linalg.eigvalsh(M)))
+    step = 1.0 / max(2.0 * eig_max, 1e-12)
+    a = np.full(k, 1.0 / k)
+    for _ in range(int(n_iter)):
+        a_prev = a
+        grad = 2.0 * (M @ a)
+        a = project_simplex(a - step * grad)
+        if float(np.linalg.norm(a - a_prev)) <= tol:
+            break
+    return a
+
+
+class _TargetState:
+    def __init__(self, X_t, y_t, X_t_val, lbda_t, sigma_t, theta_t):
+        self.X_t = X_t
+        self.y_t = y_t
+        self.X_t_val = X_t_val
+        self.lbda_t = lbda_t
+        self.sigma_t = sigma_t
+        self.theta_t = theta_t
+
+
+class RidgeAugmenterBase(BaseEstimator):
+    def __init__(self, n_max=N_MAX, random_state: Optional[int] = None):
+        self.n_max = n_max
+        self.random_state = random_state
+
+    def get_n_selected(self) -> int:
+        check_is_fitted(self, "n_selected_")
+        return int(self.n_selected_)
+
+    def _fit_target(
+        self,
+        X: ArrayLike,
+        y: ArrayLike,
+        X_t_val: ArrayLike,
+        lbda: float,
+        sigma: Optional[float],
+    ) -> _TargetState:
+        X_t, y_t = _check_Xy(X, y)
+        d = X_t.shape[1]
+        X_t_val = _check_X(X_t_val, n_features=d)
+        _, _, _, theta_t = _ridge_stats(X_t, y_t, float(lbda))
+        sigma_t = float(sigma) if sigma is not None else _estimate_sigma(X_t, y_t, float(lbda))
+        return _TargetState(X_t, y_t, X_t_val, float(lbda), sigma_t, theta_t)
+
+    def _final_concat(
+        self,
+        X_s: np.ndarray,
+        y_s: np.ndarray,
+        delta0: float,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        Xc = np.concatenate([self._target_.X_t, X_s], axis=0)
+        yc = np.concatenate([self._target_.y_t, y_s], axis=0)
+        self.max_delta_ = float(delta0)
+        return _permute(self._rng_, Xc, yc)
 
 
 def _estimate_sigma(
@@ -490,3 +593,78 @@ class SampleAugmenter(_BaseSampleAugmenter):
             init_state=(G_s0, b_s0, A_s_inv0, A_c_inv0),
         )
         return self._finalize_selection(deltas, sel_src, X_seq, y_seq, chunk_sizes)
+
+
+class UOWQSampleAugmenter(RidgeAugmenterBase):
+    def __init__(
+        self,
+        n_max: int = N_MAX,
+        n_iter_qp: int = 400,
+        random_state: Optional[int] = None,
+    ):
+        super().__init__(n_max=n_max, random_state=random_state)
+        self.n_iter_qp = n_iter_qp
+
+    def fit(
+        self,
+        X: ArrayLike,
+        y: ArrayLike,
+        X_t_val: ArrayLike,
+        lbda: float,
+        sigma: Optional[float] = None,
+    ) -> "UOWQSampleAugmenter":
+        self._rng_ = check_random_state(self.random_state)
+        self._target_ = self._fit_target(X, y, X_t_val, lbda, sigma)
+        self.n_features_ = int(self._target_.X_t.shape[1])
+        return self
+
+    def transform(
+        self,
+        l_X: Sequence[ArrayLike],
+        l_y: Sequence[ArrayLike],
+        lbda: float,
+        sigma: Optional[float] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        check_is_fitted(self, ("_target_", "_rng_", "n_features_"))
+
+        Xs, ys = prepare_sources(l_X, l_y, self.n_features_, self._rng_)
+        if not Xs:
+            self.weights_ = np.empty(0, dtype=float)
+            self.n_selected_ = 0
+            self.max_delta_ = 0.0
+            self.deltas_ = np.empty(0, dtype=float)
+            return self._target_.X_t.copy(), self._target_.y_t.copy()
+
+        thetas = []
+        Ns = np.array([X.shape[0] for X in Xs], dtype=float)
+        for X, y in zip(Xs, ys):
+            _, _, _, th = _ridge_stats(X, y, lbda=self._target_.lbda_t)
+            thetas.append(th)
+        Theta = np.stack([th - self._target_.theta_t for th in thetas], axis=1)
+
+        N0 = float(self._target_.X_t.shape[0])
+        sigma_t2 = float(self._target_.sigma_t) ** 2
+        J = (self._target_.X_t.T @ self._target_.X_t) / max(N0 * sigma_t2, 1e-12)
+
+        d = float(self.n_features_)
+        M = np.diag(d / np.maximum(Ns, 1.0)) + (Theta.T @ J @ Theta)
+
+        alpha = solve_simplex_qp(M, n_iter=int(self.n_iter_qp))
+        t = float(alpha @ (M @ alpha)) / max(d, 1.0)
+        s = 1.0 / max(t, 1e-12)
+        w = (s * alpha) / np.maximum(Ns, 1.0)
+
+        self.weights_ = np.array(w, copy=True)
+
+        Xw = [np.sqrt(max(wi, 0.0)) * X for wi, X in zip(self.weights_, Xs)]
+        yw = [np.sqrt(max(wi, 0.0)) * y for wi, y in zip(self.weights_, ys)]
+
+        X_s = np.vstack(Xw)
+        y_s = np.concatenate(yw)
+
+        n_use = int(min(int(self.n_max), int(X_s.shape[0])))
+        self.n_selected_ = n_use
+        self.max_delta_ = 0.0
+        self.deltas_ = np.zeros(n_use, dtype=float)
+
+        return self._final_concat(X_s[:n_use], y_s[:n_use], 0.0)

@@ -5,7 +5,7 @@ from textwrap import dedent
 from typing import Tuple
 import numba
 import numpy as np
-from .augmenter import OracleSampleAugmenter, SampleAugmenter
+from .augmenter import OracleSampleAugmenter, SampleAugmenter, UOWQSampleAugmenter
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
@@ -116,20 +116,31 @@ def _select_k(
     fit_s,
     fit_t,
     alpha: float,
-    k_grid,
+    k_grid: np.ndarray,
+    k_min: int = 5,
 ) -> int:
     _, _, G_s_inv, s2_s, _, _ = fit_s
     _, G_t, _, s2_t, _, _ = fit_t
-    best_k, best = None, -np.inf
 
-    for k in k_grid:
-        A_k, Omega_k, G_t_inv = _make_cache(G_t, alpha, k)
+    scores = np.empty(len(k_grid), dtype=np.float64)
+    for i, k in enumerate(k_grid):
+        A_k, Omega_k, G_t_inv = _make_cache(G_t, alpha, int(k))
         V = _V_k(s2_s, s2_t, A_k, Omega_k, G_t, G_s_inv, alpha)
-        score = _U_k(Xk, G_t_inv, V, s2_t)
-        if score > best:
-            best, best_k = score, k
+        scores[i] = _U_k(Xk, G_t_inv, V, s2_t)
 
-    return int(best_k)
+    cand = []
+    for i in range(1, len(k_grid) - 1):
+        if k_grid[i] >= k_min and scores[i] >= scores[i - 1] and scores[i] >= scores[i + 1]:
+            cand.append(i)
+    if cand:
+        j = cand[int(np.argmax(scores[cand]))]
+        return int(k_grid[j])
+
+    mask = k_grid >= k_min
+    if np.any(mask):
+        j = int(np.argmax(scores[mask]))
+        return int(k_grid[mask][j])
+    return int(k_grid[int(np.argmax(scores))])
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
@@ -166,7 +177,7 @@ def _opt_lambda_corrected_aic(
     return best_lbda
 
 
-def _hierical_theta(
+def _hierarchical_theta(
     X_t_train: np.ndarray,
     y_t_train: np.ndarray,
     X_s: np.ndarray,
@@ -342,6 +353,26 @@ def regression(
         )
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(ora.get_n_selected())
 
+    if mode == "zhang_et_al":
+        if n_max_val is None or n_max_val <= 0:
+            aug = UOWQSampleAugmenter()
+        else:
+            aug = UOWQSampleAugmenter(n_max=int(n_max_val))
+        aug = aug.fit(
+            X_t_train,
+            y_t_train,
+            X_t_val,
+            lbda=lbda_t,
+            sigma=sigma_t,
+        )
+        X_c, y_c = aug.transform(
+            l_X_s,
+            l_y_s,
+            lbda=lbda_s,
+            sigma=sigma_s,
+        )
+        return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(aug.get_n_selected())
+
     if mode == "chen_et_al":
         X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
         theta_t_ = _ridge(X=X_t_train, y=y_t_train, lbda=0.0)
@@ -371,18 +402,18 @@ def regression(
         X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
         fit_s = _fit_stats(X_s, y_s, lbda_s)
         fit_t = _fit_stats(X_t_train, y_t_train, lbda_t)
-        alpha = _default_alpha(fit_t[1], factor=10.0)
-        k_grid = range(0, 50, 100)
-        Xk = X_t_val if X_t_val is not None and X_t_val.size else np.vstack([X_s, X_t_train])
-        k_star = _select_k(Xk, fit_s, fit_t, alpha, k_grid)
-        A_k, _, _ = _make_cache(fit_t[1], alpha, k_star)
+        alpha_ft = _default_alpha(fit_t[1], factor=10.0)
+        k_grid = np.arange(0, 2001, 10, dtype=np.int64)
+        Xk = X_t_val if (X_t_val is not None and X_t_val.size) else np.vstack([X_s, X_t_train])
+        k_star = _select_k(Xk, fit_s, fit_t, alpha_ft, k_grid, k_min=10)
+        A_k, _, _ = _make_cache(fit_t[1], alpha_ft, k_star)
         theta = _theta_k(fit_s[0], fit_t[0], A_k)
-        return theta, len(X_t_train), k_star
+        return theta, len(X_t_train), len(X_s)
 
-    if mode == "hierical":
+    if mode == "hierarchical":
         X_s = np.vstack(l_X_s)
         y_s = np.concatenate(l_y_s)
-        theta = _hierical_theta(
+        theta = _hierarchical_theta(
             X_t_train=X_t_train,
             y_t_train=y_t_train,
             X_s=X_s,
@@ -404,9 +435,10 @@ full_collaboration_regression = partial(regression, mode="full")
 dynamic_greedy_collaboration_regression = partial(regression, mode="dynamic-greedy")
 dynamic_uniform_collaboration_regression = partial(regression, mode="dynamic-uniform")
 oracle_dynamic_collaboration_regression = partial(regression, mode="oracle_dynamic")
+zhang_et_al_regression = partial(regression, mode="zhang_et_al")
 chen_et_al_regression = partial(regression, mode="chen_et_al")
 obst_et_al_regression = partial(regression, mode="obst_et_al")
-hierical_regression = partial(regression, mode="hierical")
+hierarchical_regression = partial(regression, mode="hierarchical")
 
 target_single_regression.__doc__ = _REGR_DOC
 source_single_regression.__doc__ = _REGR_DOC
@@ -414,9 +446,10 @@ full_collaboration_regression.__doc__ = _REGR_DOC
 dynamic_greedy_collaboration_regression.__doc__ = _REGR_DOC
 dynamic_uniform_collaboration_regression.__doc__ = _REGR_DOC
 oracle_dynamic_collaboration_regression.__doc__ = _REGR_DOC
+zhang_et_al_regression.__doc__ = _REGR_DOC
 chen_et_al_regression.__doc__ = _REGR_DOC
 obst_et_al_regression.__doc__ = _REGR_DOC
-hierical_regression.__doc__ = _REGR_DOC
+hierarchical_regression.__doc__ = _REGR_DOC
 
 __all__ = [
     "target_single_regression",
@@ -425,7 +458,8 @@ __all__ = [
     "dynamic_greedy_collaboration_regression",
     "dynamic_uniform_collaboration_regression",
     "oracle_dynamic_collaboration_regression",
+    "zhang_et_al_regression",
     "chen_et_al_regression",
     "obst_et_al_regression",
-    "hierical_regression",
+    "hierarchical_regression",
 ]
