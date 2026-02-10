@@ -90,11 +90,10 @@ info "PWD            = $(pwd)"
 info "VENV           = ${VENV_ACTIVATE:-N/A}"
 info "SKLEARN_DATA   = $SKLEARN_DATA"
 info "DYNTR_CONFIG   = $DYNTR_CONFIG"
+
 PYTHON_BIN="$(command -v python3.11 || command -v python3 || command -v python || true)"
 [[ -n "$PYTHON_BIN" ]] || die "No python executable found (tried python3.11, python3, python)."
-
-info "PYTHON_BIN    = $PYTHON_BIN"
-"$PYTHON_BIN" -V || die "Python is not available in PATH."
+info "PYTHON_BIN     = $PYTHON_BIN"
 
 echo
 
@@ -114,66 +113,57 @@ print(cur if cur is not None else "")
 PY
 }
 
-eps="$(yaml_val data.eps)"
+read -r -a eps_list <<<"$(yaml_val data.eps_list)"
+alpha=0.0
 n_t="$(yaml_val data.n_t)"
 n_s="$(yaml_val data.n_train_samples)"
-
-eps_list=()
-if [[ -n "$eps" ]]; then
-  eps_list=("$eps")
-else
-  eps_list=(1.0 0.5 0.1)
-fi
-
-alpha=0.05
-n_t="${n_t:-1000}"
-n_s="${n_s:-2000}"
 joblib_verbose=10
 datasets=(email boston)
-
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 data_dir="${script_dir}/../dyntr/datasets/data"
 email_path="${data_dir}/email/Hillstrom.csv"
-if [[ ! -f "$email_path" ]]; then
-  warn "Email dataset not found at $email_path; skipping 'email' benchmark."
-  datasets=("${datasets[@]/email}")
-fi
 
 info "Parameters: eps_list=(${eps_list[*]}), alpha=${alpha}, n_t=${n_t}, n_s=${n_s}, joblib_verbose=${joblib_verbose}"
 info "Datasets:   (${datasets[*]})"
 echo
 
 # --- Benchmark runs -----------------------------------------------------------
+  for eps in "${eps_list[@]}"; do
+    run "bench_1 (synthetic / mono-source) eps=${eps}" \
+      "$PYTHON_BIN" bench_1_delta_illustration_synthetic_data.py \
+        --eps "$eps" -n_t "$n_t" -n_s "$n_s" --joblib-verbose "$joblib_verbose"
+
+    run "bench_2 (synthetic / mono-source) eps=${eps}" \
+      "$PYTHON_BIN" bench_2_sigma_influence_synthetic_data.py \
+        --eps "$eps" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
+
+    run "bench_4 (synthetic / mono-source) eps=${eps}" \
+      "$PYTHON_BIN" bench_4_performance_synthetic_data.py \
+        --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
+  done
+
+  run "bench_3 (synthetic / mono-source) epsilon influence" \
+    "$PYTHON_BIN" bench_3_epsilon_influence_synthetic_data.py \
+      --alpha "$alpha" --joblib-verbose "$joblib_verbose"
+
+  run "bench_6 (synthetic / mono-source) lambda_S influence" \
+    "$PYTHON_BIN" bench_6_add_lbda_influence_synthetic_data.py \
+      --alpha "$alpha" --joblib-verbose "$joblib_verbose"
+
+  run "bench_7 (synthetic / mono-source) intro illustration" \
+    "$PYTHON_BIN" bench_7_intro_illustration.py \
+      --eps 0.5 -n_t 1500 -n_s 4000 --alpha "$alpha" --joblib-verbose "$joblib_verbose"
+
+  for ds in "${datasets[@]}"; do
+    run "bench_5 (real / mono-source) dataset=${ds}" \
+      "$PYTHON_BIN" bench_5_performance_real_data.py \
+        --dataset-name "$ds" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
+  done
+
 for eps in "${eps_list[@]}"; do
-  run "bench_1 (synthetic) eps=${eps}" \
-    "$PYTHON_BIN" bench_1_delta_illustration_synthetic_data.py \
-      --eps "$eps" -n_t "$n_t" -n_s "$n_s" --joblib-verbose "$joblib_verbose"
-
-  run "bench_2 (synthetic) eps=${eps}" \
-    "$PYTHON_BIN" bench_2_sigma_influence_synthetic_data.py \
-      --eps "$eps" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-  run "bench_4 (synthetic) eps=${eps}" \
-    "$PYTHON_BIN" bench_4_performance_synthetic_data.py \
+  run "bench_8 (synthetic / multi-sources) eps=${eps}" \
+    "$PYTHON_BIN" bench_8_performance_multi_sources_synthetic_data.py \
       --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-done
-
-run "bench_3 (synthetic) epsilon influence" \
-  "$PYTHON_BIN" bench_3_epsilon_influence_synthetic_data.py \
-    --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-run "bench_6 (synthetic) lambda_S influence" \
-  "$PYTHON_BIN" bench_6_add_lbda_influence_synthetic_data.py \
-    --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-run "bench_7 (synthetic) intro illustration" \
-  "$PYTHON_BIN" bench_7_intro_illustration.py \
-    --eps 0.5 -n_t 1500 -n_s 4000 --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-for ds in "${datasets[@]}"; do
-  run "bench_5 (real) dataset=${ds}" \
-    "$PYTHON_BIN" bench_5_performance_real_data.py \
-      --dataset-name "$ds" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 done
 
 info "${GREEN}${BOLD}All benchmarks completed.${RESET}"

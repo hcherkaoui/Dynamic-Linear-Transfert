@@ -1,15 +1,13 @@
 """Plotting module."""
-
-# Authors: Hamza Cherkaoui
-
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Tuple, List
+from typing import Iterable, Tuple
+
 import matplotlib.pyplot as plt
 from matplotlib import ticker
 import numpy as np
-from dyntr.utils import crop_pdf
+
 from config import get_config
 
 
@@ -26,34 +24,33 @@ def _set_nice_log_xticks(ax):
 def plot_stats_evolution(
     results: Iterable[Iterable[Tuple[str, str, str, np.ndarray]]],
     *,
-    axis: Optional[plt.Axes] = None,
-    xlogscale: bool = False,
-    ylogscale: bool = False,
-    nice_xlogscale: bool = True,
-    ytwinlogscale: bool = False,
-    main_axis: Optional[Sequence[str]] = None,
-    secondary_axis: Optional[Sequence[str]] = None,
-    main_axis_ref_line: Optional[float] = None,
-    secondary_axis_ref_line: Optional[float] = None,
-    sharex: Optional[bool] = False,
-    sharey: Optional[bool] = False,
-    uncertainty: bool = True,
-    figsize: Tuple[float, float] = (4.0, 4.0),
-    title: str = "",
-    xlabel: str = "",
-    lw: float = _CFG.LW,
-    alpha: float = _CFG.ALPHA,
-    fontsize: float = _CFG.FONTSIZE,
-    ncols_legend: int = 1,
-    legend_y_pad: float = 1.3,
-    figures_dir: str | Path = _CFG.FIGURES_DIR,
-    filename: str = "figure",
-    filename_suffix: str = "",
-    pdf_cropping: bool = True,
-    verbose: bool = False,
-    ignore_nan: bool = True,
-    ylim: Optional[Tuple[float, float]] = None,
-    ylim_secondary: Optional[Tuple[float, float]] = None,
+    axis=None,
+    xlogscale=False,
+    ylogscale=False,
+    nice_xlogscale=True,
+    ytwinlogscale=False,
+    main_axis=None,
+    secondary_axis=None,
+    main_axis_ref_line=None,
+    secondary_axis_ref_line=None,
+    sharex=False,
+    sharey=False,
+    uncertainty=True,
+    figsize=(4.0, 4.0),
+    title="",
+    xlabel="",
+    lw=_CFG.LW,
+    alpha=_CFG.ALPHA,
+    fontsize=_CFG.FONTSIZE,
+    ncols_legend=1,
+    legend_y_pad=1.3,
+    figures_dir=_CFG.FIGURES_DIR,
+    filename="figure",
+    filename_suffix="",
+    verbose=False,
+    ignore_nan=True,
+    ylim=None,
+    ylim_secondary=None,
 ) -> str | Tuple[plt.Figure, plt.Axes]:
     """Plot the evolution of statistics, with an optional secondary y-axis.
 
@@ -92,18 +89,16 @@ def plot_stats_evolution(
         Vertical padding for the legend.
     figures_dir, filename, filename_suffix
         Base directory, filename and optional suffix for the saved PDF.
-    pdf_cropping
-        If True, call `crop_pdf` on the saved file.
     verbose
         If True, print info messages.
     ignore_nan
         If True, use nan-safe stats and warn once if NaNs are present.
     ylim
-        (ymin, ymax) for the main (left) y-axis. If `ylogscale=True`,
+        (ymin, ymax) for the main (left) y-axis. If `ylogscale = True`,
         both bounds must be > 0.
     ylim_secondary
         (ymin, ymax) for the secondary (right) y-axis (if present).
-        If `ytwinlogscale=True`, both bounds must be > 0.
+        If `ytwinlogscale = True`, both bounds must be > 0.
 
     Returns
     -------
@@ -127,11 +122,11 @@ def plot_stats_evolution(
     warned_nan = False
 
     # Plot curves
-    for result in zip(*results):  # iterate over stats to plot
-        name, color, linestyle, tt, test_value = zip(*result)  # iterate over trials
+    for result in zip(*results):
+        name, color, linestyle, tt, test_value = zip(*result)
 
-        tt = np.asarray(tt[0]).ravel()  # shape: (T,)
-        vals = np.asarray(test_value)   # shape: (n_trials, T) or (T,)
+        tt = np.asarray(tt[0]).ravel()
+        vals = np.asarray(test_value)
         if vals.ndim == 1:
             vals = vals[None, :]
 
@@ -157,18 +152,36 @@ def plot_stats_evolution(
             ax_use = None
 
         if ax_use is not None:
-            ax_use.plot(tt, mean_stats, lw=lw, color=color[0], linestyle=linestyle[0],
-                        label=name[0], alpha=alpha)
+            ax_use.plot(
+                tt,
+                mean_stats,
+                lw=lw,
+                color=color[0],
+                linestyle=linestyle[0],
+                label=name[0],
+                alpha=alpha,
+            )
             if uncertainty:
-                ax_use.fill_between(tt, mean_stats - std_stats, mean_stats + std_stats,
-                                    color=color[0], alpha=alpha / 3)
+                ax_use.fill_between(
+                    tt,
+                    mean_stats - std_stats,
+                    mean_stats + std_stats,
+                    color=color[0],
+                    alpha=alpha / 3,
+                )
 
     # Reference lines
     if main_axis_ref_line is not None:
         ax.axhline(main_axis_ref_line, lw=lw, linestyle="dashed", color="black", alpha=alpha / 2)
 
     if secondary_axis_ref_line is not None and ax_twin is not None:
-        ax_twin.axhline(secondary_axis_ref_line, lw=lw, linestyle="dashed", color="black", alpha=alpha / 2)
+        ax_twin.axhline(
+            secondary_axis_ref_line,
+            lw=lw,
+            linestyle="dashed",
+            color="black",
+            alpha=alpha / 2,
+        )
 
     # Scaling
     if xlogscale:
@@ -208,9 +221,9 @@ def plot_stats_evolution(
         handles += h2
         labels += l2
 
-    seen: set[str] = set()
-    uniq_handles: List = []
-    uniq_labels: List[str] = []
+    seen = set()
+    uniq_handles = []
+    uniq_labels = []
     for h, lab in zip(handles, labels):
         if lab != "_nolegend_" and lab not in seen:
             uniq_handles.append(h)
@@ -219,9 +232,13 @@ def plot_stats_evolution(
 
     if uniq_handles:
         legend = fig.legend(
-            uniq_handles, uniq_labels,
-            loc="upper center", bbox_to_anchor=(0.5, legend_y_pad),
-            ncol=ncols_legend, frameon=False, fontsize=tick_fs,
+            uniq_handles,
+            uniq_labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, legend_y_pad),
+            ncol=ncols_legend,
+            frameon=False,
+            fontsize=tick_fs,
         )
         legend.set_in_layout(True)
         for legline in legend.get_lines():
@@ -237,11 +254,8 @@ def plot_stats_evolution(
             print(f"[INFO] Saving figure to '{str(out_path)}'")
         fig.savefig(str(out_path), dpi=300, bbox_inches="tight")
 
-        if pdf_cropping:
-            crop_pdf(str(out_path))
-
         return str(out_path)
-    else:
-        if verbose:
-            print("[INFO] Added plots to provided axis.")
-        return ax.figure, ax
+
+    if verbose:
+        print("[INFO] Added plots to provided axis.")
+    return ax.figure, ax

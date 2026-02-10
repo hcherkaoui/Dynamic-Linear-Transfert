@@ -1,13 +1,12 @@
 """Configuration loader."""
-
-# Authors: Hamza Cherkaoui
-
 from __future__ import annotations
+
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import os
 from typing import Any, Mapping
+
 import numpy as np
 import yaml
 
@@ -29,10 +28,10 @@ class Config:
     L_SIGMA_S: np.ndarray
     N_TRAIN_SAMPLES: int
     N_T: int
-    STEP: int
+    N_POINTS: int
     SIGMA: float
     D: int
-    EPS: float
+    EPS: list[float]
     LBDA_DEFAULT: float
 
 
@@ -74,9 +73,9 @@ def get_config(path: str | None = None) -> Config:
         L_SIGMA_S=_logspace(data_cfg.get("l_sigma_s", {"start": -3, "stop": 3, "num": 50})),
         N_TRAIN_SAMPLES=int(data_cfg.get("n_train_samples", 2000)),
         N_T=int(data_cfg.get("n_t", 1000)),
-        STEP=int(data_cfg.get("step", 20)),
+        N_POINTS=int(data_cfg.get("n_points", 20)),
         SIGMA=float(data_cfg.get("sigma", 1.0)),
         D=int(data_cfg.get("d", 50)),
-        EPS=float(data_cfg.get("eps", 0.5)),
+        EPS=list(data_cfg.get("eps", [0.5])),
         LBDA_DEFAULT=float(data_cfg.get("lbda_default", 1.0)),
     )
