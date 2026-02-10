@@ -1,48 +1,13 @@
 """Utilities helpers module."""
 from __future__ import annotations
-
-import cProfile
 import os
 import random
-import threading
-from typing import Optional, Sequence, Tuple
-
+from typing import Optional, Tuple
 import numba
 import numpy as np
 from numpy.typing import ArrayLike
 from sklearn.utils.validation import check_array
-
 from .statistics import opt_lambda
-
-
-_PROFILE_STATE = threading.local()
-
-
-def profile_me(func):
-    """Profiling decorator, produce a report <func-name>.profile to be open as.
-
-    Place @profile_me on top of the desired function, then:
-    "python -m snakeviz <func-name>.profile"
-    """
-
-    def profiled_func(*args, **kwargs):
-        if getattr(_PROFILE_STATE, "active", False):
-            return func(*args, **kwargs)
-        _PROFILE_STATE.active = True
-        try:
-            func_name = getattr(func, "__name__", func.__class__.__name__)
-            filename = func_name + ".profile"
-            prof = cProfile.Profile()
-            try:
-                ret = prof.runcall(func, *args, **kwargs)
-            except ValueError:
-                return func(*args, **kwargs)
-            prof.dump_stats(filename)
-            return ret
-        finally:
-            _PROFILE_STATE.active = False
-
-    return profiled_func
 
 
 def set_random_state(seed: int) -> None:
@@ -254,14 +219,3 @@ def _check_Xy(X: ArrayLike, y: ArrayLike) -> Tuple[np.ndarray, np.ndarray]:
             f"X and y have inconsistent shapes: {X.shape[0]} != {y.shape[0]}"
         )
     return X, y
-
-
-def _stack_sources(
-    l_X: Sequence[ArrayLike],
-    l_y: Sequence[ArrayLike],
-) -> Tuple[np.ndarray, np.ndarray]:
-    if len(l_X) != len(l_y) or len(l_X) == 0:
-        raise ValueError("l_X and l_y must be non-empty lists of the same length.")
-    X = np.vstack([_check_X(Xi) for Xi in l_X]).astype(float, copy=False)
-    y = np.concatenate([_as_1d_float(yi) for yi in l_y]).astype(float, copy=False)
-    return _check_Xy(X, y)

@@ -261,14 +261,6 @@ class _AugmenterBase(BaseEstimator):
         if str(self.strategy) not in {"greedy", "uniform"}:
             raise ValueError("strategy must be in {'greedy','uniform'}.")
 
-    def get_delta(self) -> float:
-        check_is_fitted(self, "max_delta_")
-        return float(self.max_delta_)
-
-    def get_deltas(self) -> np.ndarray:
-        check_is_fitted(self, "deltas_")
-        return np.array(self.deltas_, copy=True)
-
     def get_n_selected(self) -> int:
         check_is_fitted(self, "n_selected_")
         return int(self.n_selected_)

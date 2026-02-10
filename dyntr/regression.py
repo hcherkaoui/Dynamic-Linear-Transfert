@@ -1,13 +1,10 @@
 """Regression module."""
 from __future__ import annotations
-
 from functools import partial
 from textwrap import dedent
 from typing import Tuple
-
 import numba
 import numpy as np
-
 from .augmenter import OracleSampleAugmenter, SampleAugmenter
 
 
@@ -276,6 +273,7 @@ def regression(
     alpha: float = 0.05,
     mode: str = "dynamic-greedy",
     chunk_size: int = 5,
+    n_max: int | None = None,
 ) -> Tuple[np.ndarray, int, int]:
     """Dispatch regression modes and return (theta, n_t, n_s)."""
 
@@ -292,9 +290,24 @@ def regression(
         y_c = np.r_[y_t_train, y_s]
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), len(X_s)
 
+    n_sources = len(l_X_s)
+    n_max_val = n_max
+    if n_max_val is None:
+        n_max_val = max(len(X_s) for X_s in l_X_s) if l_X_s else 0
+    if n_sources > 1 and n_max_val > 0:
+        n_max_val = max(1, int(n_max_val // n_sources))
+
     if mode in {"dynamic", "dynamic-greedy", "dynamic-uniform"}:
         strategy = "greedy" if mode in {"dynamic", "dynamic-greedy"} else "uniform"
-        aug = SampleAugmenter(alpha=alpha, strategy=strategy, chunk_size=chunk_size)
+        if n_max_val is None or n_max_val <= 0:
+            aug = SampleAugmenter(alpha=alpha, strategy=strategy, chunk_size=chunk_size)
+        else:
+            aug = SampleAugmenter(
+                alpha=alpha,
+                strategy=strategy,
+                chunk_size=chunk_size,
+                n_max=int(n_max_val),
+            )
         aug = aug.fit(
             X_t_train,
             y_t_train,
@@ -311,7 +324,10 @@ def regression(
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(aug.get_n_selected())
 
     if mode == "oracle_dynamic":
-        ora = OracleSampleAugmenter()
+        if n_max_val is None or n_max_val <= 0:
+            ora = OracleSampleAugmenter()
+        else:
+            ora = OracleSampleAugmenter(n_max=int(n_max_val))
         ora = ora.fit(
             X_t_train,
             y_t_train,
