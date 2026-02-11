@@ -5,8 +5,8 @@ import time
 from joblib import Parallel, delayed
 from dyntr.utils import format_duration, set_random_state
 from config import get_config
-from experiments import run_one_epsilon_influence
-from plotting import plot_stats_evolution
+from experiments import run_one_eps_infl
+from plotting import plot_stats_evol
 
 
 _CFG = get_config()
@@ -39,7 +39,7 @@ if __name__ == "__main__":
 # Main
     print("[INFO] Running optimal sample sharing experiment...")
     kwargs = dict(d=D, l_eps=L_EPS, lbda_s=LBDA_DEFAULT, alpha=args.alpha)
-    delayed_runs = [delayed(run_one_epsilon_influence)(**kwargs) for _ in range(N_RUNS)]
+    delayed_runs = [delayed(run_one_eps_infl)(**kwargs) for _ in range(N_RUNS)]
 
     results = Parallel(verbose=args.joblib_verbose, n_jobs=N_JOBS)(delayed_runs)
 
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     secondary_axis = [r"$n^\star$"]
     uncertainty = True
     title = r"$\sigma_T = \sigma_S = $" + f"{SIGMA:.2f}"
-    plot_stats_evolution(
+    plot_stats_evol(
         results=results,
         xlogscale=True,
         ylogscale=False,

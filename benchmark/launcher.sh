@@ -129,40 +129,48 @@ echo
 
 # --- Benchmark runs -----------------------------------------------------------
   for eps in "${eps_list[@]}"; do
-    run "bench_1 (synthetic / mono-source) eps=${eps}" \
-      "$PYTHON_BIN" bench_1_delta_illustration_synthetic_data.py \
+    run "bench_01 (synthetic / mono-source) eps=${eps}" \
+      "$PYTHON_BIN" bench_01_delta_regr_illus_synth.py \
         --eps "$eps" -n_t "$n_t" -n_s "$n_s" --joblib-verbose "$joblib_verbose"
 
-    run "bench_2 (synthetic / mono-source) eps=${eps}" \
-      "$PYTHON_BIN" bench_2_sigma_influence_synthetic_data.py \
+    run "bench_02 (synthetic / mono-source) eps=${eps}" \
+      "$PYTHON_BIN" bench_02_sigma_infl_synth.py \
         --eps "$eps" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 
-    run "bench_4 (synthetic / mono-source) eps=${eps}" \
-      "$PYTHON_BIN" bench_4_performance_synthetic_data.py \
+    run "bench_04 (synthetic / mono-source / regr) eps=${eps}" \
+      "$PYTHON_BIN" bench_04_perf_regr_synth.py \
+        --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
+
+    run "bench_09 (synthetic / mono-source / classif) eps=${eps}" \
+      "$PYTHON_BIN" bench_09_perf_classif_synth.py \
         --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
   done
 
-  run "bench_3 (synthetic / mono-source) epsilon influence" \
-    "$PYTHON_BIN" bench_3_epsilon_influence_synthetic_data.py \
+  run "bench_03 (synthetic / mono-source) epsilon influence" \
+    "$PYTHON_BIN" bench_03_eps_infl_synth.py \
       --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 
-  run "bench_6 (synthetic / mono-source) lambda_S influence" \
-    "$PYTHON_BIN" bench_6_add_lbda_influence_synthetic_data.py \
+  run "bench_06 (synthetic / mono-source) lambda_S influence" \
+    "$PYTHON_BIN" bench_06_lbda_infl_synth.py \
       --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 
-  run "bench_7 (synthetic / mono-source) intro illustration" \
-    "$PYTHON_BIN" bench_7_intro_illustration.py \
+  run "bench_07 (synthetic / mono-source) intro illustration" \
+    "$PYTHON_BIN" bench_07_intro_regr_illus.py \
       --eps 0.5 -n_t 1500 -n_s 4000 --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 
   for ds in "${datasets[@]}"; do
-    run "bench_5 (real / mono-source) dataset=${ds}" \
-      "$PYTHON_BIN" bench_5_performance_real_data.py \
+    run "bench_05 (real / mono-source) dataset=${ds}" \
+      "$PYTHON_BIN" bench_05_perf_regr_real.py \
         --dataset-name "$ds" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
   done
 
 for eps in "${eps_list[@]}"; do
-  run "bench_8 (synthetic / multi-sources) eps=${eps}" \
-    "$PYTHON_BIN" bench_8_performance_multi_sources_synthetic_data.py \
+  run "bench_08 (synthetic / multi-sources / regr) eps=${eps}" \
+    "$PYTHON_BIN" bench_08_perf_regr_multi_synth.py \
+      --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
+
+  run "bench_10 (synthetic / multi-sources / classif) eps=${eps}" \
+    "$PYTHON_BIN" bench_10_perf_multi_classif_synth.py \
       --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
 done
 

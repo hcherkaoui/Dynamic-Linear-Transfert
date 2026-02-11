@@ -12,7 +12,7 @@ srun --pty -A jcx@v100 -p gpu_p13 --gres=gpu:1 -c 26 --time=02:00:00 bash
 
 ## 2) Submit the benchmark job (compute node via Slurm)
 ```bash
-bash launcher.sh
+bash launcher.sh --run
 ```
 
 ## Datasets
