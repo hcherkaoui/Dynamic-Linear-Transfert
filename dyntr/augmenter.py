@@ -6,7 +6,7 @@ from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_is_fitted
-from .statistics import compute_delta_lower_bound
+from .linear import compute_delta_regr_lower_bound
 from .utils import _check_X, _check_Xy, std_estimation
 
 
@@ -221,7 +221,7 @@ def _sample_score_update_batch(
     A_s_inv = _woodbury_update(A_s_inv, X_b)
     A_c_inv = _woodbury_update(A_c_inv, X_b)
     theta_s = A_s_inv @ b_s
-    delta = compute_delta_lower_bound(
+    delta = compute_delta_regr_lower_bound(
         theta_t,
         theta_s,
         G_t,

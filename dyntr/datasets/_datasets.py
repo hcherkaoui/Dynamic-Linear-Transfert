@@ -12,6 +12,29 @@ from sklearn.preprocessing import StandardScaler
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _generate_thetas(
+    d: int,
+    epsilon: float,
+    random_state=None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return theta_s, theta_t such that ||theta_s - theta_t||_2  =  epsilon."""
+    if d <= 0:
+        raise ValueError("d must be positive.")
+    if epsilon < 0:
+        raise ValueError("epsilon must be >= 0")
+
+    if random_state is None:
+        rng = np.random.default_rng()
+    elif isinstance(random_state, (int, np.integer)):
+        rng = np.random.default_rng(random_state)
+    else:
+        rng = random_state
+
+    theta_s = rng.normal(size=d)
+    v = rng.normal(size=d)
+    return theta_s, theta_s + (epsilon / np.linalg.norm(v)) * v
+
+
 def _assert_is_regression(y: np.ndarray, name: str, min_unique: int = 3) -> None:
     """Raise if y looks like classification (e.g., binary)."""
     y = np.asarray(y)
@@ -21,6 +44,25 @@ def _assert_is_regression(y: np.ndarray, name: str, min_unique: int = 3) -> None
         f"(only {uq.size} unique values: {uq[:10]}). "
         f"Use a classification loader or change the dataset."
     )
+
+
+def _bootstrap_sources(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    n_sources: int,
+    rng: np.random.Generator,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    if n_sources == 1:
+        return [X.copy()], [y.copy()]
+    l_X = []
+    l_y = []
+    n = X.shape[0]
+    for _ in range(n_sources):
+        idx = rng.integers(0, n, size=n)
+        l_X.append(X[idx].copy())
+        l_y.append(y[idx].copy())
+    return l_X, l_y
 
 
 def _condition_blocks(

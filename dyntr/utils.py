@@ -7,7 +7,7 @@ import numba
 import numpy as np
 from numpy.typing import ArrayLike
 from sklearn.utils.validation import check_array
-from .statistics import opt_lambda
+from .linear import opt_lambda
 
 
 def set_random_state(seed: int) -> None:

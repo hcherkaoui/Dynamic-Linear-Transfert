@@ -1,54 +1,9 @@
 """Datasets module."""
 from __future__ import annotations
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 import numpy as np
-from ._datasets import _assert_is_regression, _condition_blocks
+from ._datasets import _assert_is_regression, _condition_blocks, _bootstrap_sources, _generate_thetas
 from ._datasets import _load_boston_dataset, _load_hillstrom_dataset
-
-
-Array4 = Tuple[np.ndarray, list[np.ndarray], np.ndarray, list[np.ndarray]]
-
-
-def _bootstrap_sources(
-    X: np.ndarray,
-    y: np.ndarray,
-    *,
-    n_sources: int,
-    rng: np.random.Generator,
-) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    if n_sources == 1:
-        return [X.copy()], [y.copy()]
-    l_X = []
-    l_y = []
-    n = X.shape[0]
-    for _ in range(n_sources):
-        idx = rng.integers(0, n, size=n)
-        l_X.append(X[idx].copy())
-        l_y.append(y[idx].copy())
-    return l_X, l_y
-
-
-def generate_thetas(
-    d: int,
-    epsilon: float,
-    random_state=None,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Return theta_s, theta_t such that ||theta_s - theta_t||_2  =  epsilon."""
-    if d <= 0:
-        raise ValueError("d must be positive.")
-    if epsilon < 0:
-        raise ValueError("epsilon must be >= 0")
-
-    if random_state is None:
-        rng = np.random.default_rng()
-    elif isinstance(random_state, (int, np.integer)):
-        rng = np.random.default_rng(random_state)
-    else:
-        rng = random_state
-
-    theta_s = rng.normal(size=d)
-    v = rng.normal(size=d)
-    return theta_s, theta_s + (epsilon / np.linalg.norm(v)) * v
 
 
 def fetch_synthetic_datasets(
@@ -133,7 +88,7 @@ def fetch_synthetic_datasets(
     if theta_t_and_theta_s is None:
         if d < 2 and eps != 0.0:
             raise ValueError("d must be at least 2 when using default θ_s with nonzero eps.")
-        theta_s, theta_t = generate_thetas(d, eps, random_state=random_state)
+        theta_s, theta_t = _generate_thetas(d, eps, random_state=random_state)
     else:
         theta_t = np.asarray(theta_t_and_theta_s[0], dtype=float).reshape(-1)
         theta_s = np.asarray(theta_t_and_theta_s[1], dtype=float).reshape(-1)
@@ -176,6 +131,63 @@ def fetch_synthetic_datasets(
         },
     }
     return out
+
+
+def fetch_synthetic_classification_datasets(
+    n_t_train=10000,
+    n_t_val=1000,
+    n_t_test=1000,
+    n_s_train=10000,
+    n_s_val=1000,
+    n_s_test=1000,
+    d=30,
+    eps=0.5,
+    sigma_t=1.0,
+    sigma_s=1.0,
+    theta_t_and_theta_s=None,
+    n_sources=1,
+    random_state=None,
+) -> Dict[str, Any]:
+    """
+    Generate paired synthetic linear classification datasets (target, sources).
+
+    Labels are in {-1, +1} based on the sign of X @ theta plus Gaussian noise.
+    """
+    data = fetch_synthetic_datasets(
+        n_t_train=n_t_train,
+        n_t_val=n_t_val,
+        n_t_test=n_t_test,
+        n_s_train=n_s_train,
+        n_s_val=n_s_val,
+        n_s_test=n_s_test,
+        d=d,
+        eps=eps,
+        sigma_t=sigma_t,
+        sigma_s=sigma_s,
+        theta_t_and_theta_s=theta_t_and_theta_s,
+        n_sources=n_sources,
+        random_state=random_state,
+    )
+
+    def _binarize(y):
+        y = np.asarray(y)
+        return np.where(y >= 0.0, 1.0, -1.0)
+
+    X_t, y_t = data["target_train"]
+    X_t_val, y_t_val = data["target_val"]
+    X_t_test, y_t_test = data["target_test"]
+    l_X_s_train, l_y_s_train = data["source_train"]
+    l_X_s_val, l_y_s_val = data["source_val"]
+    l_X_s_test, l_y_s_test = data["source_test"]
+
+    data["target_train"] = (X_t, _binarize(y_t))
+    data["target_val"] = (X_t_val, _binarize(y_t_val))
+    data["target_test"] = (X_t_test, _binarize(y_t_test))
+    data["source_train"] = (l_X_s_train, [_binarize(y) for y in l_y_s_train])
+    data["source_val"] = (l_X_s_val, [_binarize(y) for y in l_y_s_val])
+    data["source_test"] = (l_X_s_test, [_binarize(y) for y in l_y_s_test])
+    data["meta"]["task"] = "classification"
+    return data
 
 
 def fetch_real_datasets(

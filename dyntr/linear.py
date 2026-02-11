@@ -1,11 +1,154 @@
-"""Regression module."""
+"""Linear models module (regression + classification + statistics)."""
 from __future__ import annotations
 from functools import partial
 from textwrap import dedent
 from typing import Tuple
 import numba
 import numpy as np
-from .augmenter import OracleSampleAugmenter, SampleAugmenter, UOWQSampleAugmenter
+
+
+@numba.jit(nopython=True, cache=True, fastmath=True)
+def compute_delta_regr(
+    theta_t: np.ndarray,
+    theta_s: np.ndarray,
+    G_s: np.ndarray,
+    G_t: np.ndarray,
+    A_t_inv: np.ndarray,
+    A_s_inv: np.ndarray,
+    A_c_inv: np.ndarray,
+    X_val: np.ndarray,
+    sigma_s: float,
+    sigma_t: float,
+    lbda_t: float,
+    lbda_s: float,
+) -> float:
+    sigma_t_sq = sigma_t * sigma_t
+    sigma_s_sq = sigma_s * sigma_s
+    eye = np.eye(G_s.shape[0])
+    A_s = G_s + lbda_s * eye
+    theta_diff = theta_s - theta_t
+    U = X_val @ A_t_inv
+    V = X_val @ A_c_inv
+    UTU = U.T @ U
+    VTV = V.T @ V
+    v1 = lbda_t * U @ theta_t
+    v2 = V @ (G_s @ theta_diff - lbda_t * theta_t)
+    L1 = sigma_t_sq * G_t
+    L2 = -lbda_t * lbda_t * sigma_t_sq * A_t_inv @ G_t @ A_t_inv
+    K1 = -sigma_s_sq * G_s @ A_s_inv @ G_s @ A_s_inv
+    K2 = -sigma_t_sq * A_s @ A_t_inv @ G_t @ A_t_inv @ A_s
+    K3 = sigma_s_sq * G_s + sigma_t_sq * G_t
+    N = K1 + K2 + K3
+    M = L1 + L2
+    return float(v1 @ v1) - float(v2 @ v2) + np.trace(M @ UTU) - np.trace(N @ VTV)
+
+
+@numba.jit(nopython=True, cache=True, fastmath=True)
+def compute_delta_regr_variance(
+    theta_s: np.ndarray,
+    theta_t: np.ndarray,
+    G_s: np.ndarray,
+    G_t: np.ndarray,
+    A_t_inv: np.ndarray,
+    A_s_inv: np.ndarray,
+    A_c_inv: np.ndarray,
+    X_val: np.ndarray,
+    sigma_s: float,
+    sigma_t: float,
+    lbda_t: float,
+    lbda_s: float,
+) -> float:
+    sigma_t_sq = sigma_t * sigma_t
+    sigma_s_sq = sigma_s * sigma_s
+    d = G_s.shape[0]
+    eye = np.eye(d)
+    A_s = G_s + lbda_s * eye
+    U = X_val @ A_t_inv
+    V = X_val @ A_c_inv
+    UTU = U.T @ U
+    VTV = V.T @ V
+    D = np.zeros((2 * d, 2 * d))
+    D[0:d, 0:d] = -G_s @ (VTV @ G_s)
+    D[0:d, d:2 * d] = G_s @ (VTV @ A_s)
+    D[d:2 * d, 0:d] = A_s @ (VTV @ G_s)
+    D[d:2 * d, d:2 * d] = lbda_t * lbda_t * UTU - A_s @ VTV @ A_s
+    mu = np.zeros(2 * d)
+    mu[0:d] = A_s_inv @ G_s @ theta_s
+    mu[d:2 * d] = A_t_inv @ G_t @ theta_t
+    Sigma = np.zeros((2 * d, 2 * d))
+    Sigma[0:d, 0:d] = sigma_s_sq * A_s_inv @ G_s @ A_s_inv
+    Sigma[d:2 * d, d:2 * d] = sigma_t_sq * A_t_inv @ G_t @ A_t_inv
+    DS = D @ Sigma
+    return float(2.0 * np.trace(DS @ DS) + 4.0 * mu @ DS @ D @ mu)
+
+
+@numba.jit(nopython=True, cache=True, fastmath=True)
+def compute_delta_regr_lower_bound(
+    theta_t: np.ndarray,
+    theta_s: np.ndarray,
+    G_t: np.ndarray,
+    G_s: np.ndarray,
+    A_t_inv: np.ndarray,
+    A_s_inv: np.ndarray,
+    A_c_inv: np.ndarray,
+    X_val: np.ndarray,
+    sigma_t: float,
+    sigma_s: float,
+    lbda_t=1.0,
+    lbda_s=1.0,
+    alpha=0.01,
+) -> float:
+    delta_hat = compute_delta_regr(
+        theta_t,
+        theta_s,
+        G_s,
+        G_t,
+        A_t_inv,
+        A_s_inv,
+        A_c_inv,
+        X_val,
+        sigma_s,
+        sigma_t,
+        lbda_t,
+        lbda_s,
+    )
+    var_delta_hat = compute_delta_regr_variance(
+        theta_s,
+        theta_t,
+        G_s,
+        G_t,
+        A_t_inv,
+        A_s_inv,
+        A_c_inv,
+        X_val,
+        sigma_s,
+        sigma_t,
+        lbda_t,
+        lbda_s,
+    )
+    if var_delta_hat < 0.0:
+        var_delta_hat = 0.0
+    return delta_hat - alpha * np.sqrt(var_delta_hat)
+
+
+@numba.jit(nopython=True, cache=True, fastmath=True)
+def opt_lambda(
+    X: np.ndarray,
+    y: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    lbda_grid=np.logspace(-3, 3, 50),
+) -> float:
+    _, d = X.shape
+    eye = np.eye(d)
+    G = X.T @ X
+    b = X.T @ y
+    m = lbda_grid.shape[0]
+    errors = np.empty(m)
+    for i in range(m):
+        r = X_val @ np.linalg.solve(G + lbda_grid[i] * eye, b) - y_val
+        errors[i] = r @ r
+    return float(lbda_grid[np.argmin(errors)])
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
@@ -188,30 +331,14 @@ def _hierarchical_theta(
     lbda_s: float,
     lbda_c: float,
 ) -> np.ndarray:
-    """
-    Two-task hierarchical Bayesian linear regression (Gaussian-Gaussian model).
-
-    Prior:
-        mu ~ N(0, (lambda_0 I)^{-1})
-        beta_t | mu ~ N(mu, (lambda_b I)^{-1})
-        beta_s | mu ~ N(mu, (lambda_b I)^{-1})
-
-    Likelihood:
-        y_t_train ~ N(X_t_train beta_t, sigma_t^2 I)
-        y_s ~ N(X_s beta_s, sigma_s^2 I)
-
-    Returns posterior mean (MAP) for beta_t.
-    """
     n_t, d = X_t_train.shape
     n_s, d_s = X_s.shape
     if d_s != d:
         raise ValueError("X_t_train and X_s must have the same number of columns.")
 
-    # Stabilize variances
     sig2_t = max(float(sigma_t) * float(sigma_t), 1e-12)
     sig2_s = max(float(sigma_s) * float(sigma_s), 1e-12)
 
-    # Use ridge parameters as hyperparameters for the hierarchy
     lambda_0 = max(float(lbda_c), 1e-8)
     lambda_b = max(0.5 * (float(lbda_t) + float(lbda_s)), 1e-8)
 
@@ -221,19 +348,13 @@ def _hierarchical_theta(
     g_s = (X_s.T @ y_s) / sig2_s
 
     eye = np.eye(d)
-    gamma = (lambda_b ** 2) / (lambda_0 + 2.0 * lambda_b)
-    c = lambda_b * (lambda_0 + lambda_b) / (lambda_0 + 2.0 * lambda_b)
+    A = (lambda_0 + 2.0 * lambda_b) * eye + G_t + G_s
+    b = g_t + g_s
+    mu = np.linalg.solve(A, b)
 
-    H_tt = G_t + c * eye
-    H_ss = G_s + c * eye
-
-    # Block elimination: solve for beta_t only
-    H_ss_inv = np.linalg.inv(H_ss) if n_s > 0 else (1.0 / c) * eye
-    B = H_tt - (gamma ** 2) * H_ss_inv
-    rhs = g_t + gamma * (H_ss_inv @ g_s)
-
-    beta_t = np.linalg.solve(B, rhs)
-    return beta_t
+    B = lambda_b * eye + G_t
+    theta_t = np.linalg.solve(B, g_t + lambda_b * mu)
+    return theta_t
 
 
 _REGR_DOC = dedent(
@@ -269,7 +390,7 @@ _REGR_DOC = dedent(
 )
 
 
-def regression(
+def regr(
     theta_t: np.ndarray,
     X_t_train: np.ndarray,
     y_t_train: np.ndarray,
@@ -292,11 +413,13 @@ def regression(
         return _ridge(X_t_train, y_t_train, lbda_t), len(X_t_train), 0
 
     if mode == "source":
-        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
+        X_s = np.vstack(l_X_s)
+        y_s = np.concatenate(l_y_s)
         return _ridge(X_s, y_s, lbda_s), 0, len(X_s)
 
     if mode == "full":
-        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
+        X_s = np.vstack(l_X_s)
+        y_s = np.concatenate(l_y_s)
         X_c = np.r_[X_t_train, X_s]
         y_c = np.r_[y_t_train, y_s]
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), len(X_s)
@@ -309,6 +432,8 @@ def regression(
         n_max_val = max(1, int(n_max_val // n_sources))
 
     if mode in {"dynamic", "dynamic-greedy", "dynamic-uniform"}:
+        from .augmenter import SampleAugmenter
+
         strategy = "greedy" if mode in {"dynamic", "dynamic-greedy"} else "uniform"
         if n_max_val is None or n_max_val <= 0:
             aug = SampleAugmenter(alpha=alpha, strategy=strategy, chunk_size=chunk_size)
@@ -334,11 +459,18 @@ def regression(
         )
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(aug.get_n_selected())
 
-    if mode == "oracle_dynamic":
+    if mode in {"oracle_dynamic", "oracle-dynamic", "oracle-dynamic-greedy", "oracle-dynamic-uniform"}:
+        from .augmenter import OracleSampleAugmenter
+
+        strategy = "uniform" if mode == "oracle-dynamic-uniform" else "greedy"
         if n_max_val is None or n_max_val <= 0:
-            ora = OracleSampleAugmenter()
+            ora = OracleSampleAugmenter(strategy=strategy, chunk_size=chunk_size)
         else:
-            ora = OracleSampleAugmenter(n_max=int(n_max_val))
+            ora = OracleSampleAugmenter(
+                n_max=int(n_max_val),
+                strategy=strategy,
+                chunk_size=chunk_size,
+            )
         ora = ora.fit(
             X_t_train,
             y_t_train,
@@ -354,6 +486,8 @@ def regression(
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(ora.get_n_selected())
 
     if mode == "zhang_et_al":
+        from .augmenter import UOWQSampleAugmenter
+
         if n_max_val is None or n_max_val <= 0:
             aug = UOWQSampleAugmenter()
         else:
@@ -374,7 +508,8 @@ def regression(
         return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(aug.get_n_selected())
 
     if mode == "chen_et_al":
-        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
+        X_s = np.vstack(l_X_s)
+        y_s = np.concatenate(l_y_s)
         theta_t_ = _ridge(X=X_t_train, y=y_t_train, lbda=0.0)
         theta_s_ = _ridge(X=X_s, y=y_s, lbda=0.0)
         eye = np.eye(X_t_train.shape[1])
@@ -399,7 +534,8 @@ def regression(
         return W @ theta_t_ + (eye - W) @ theta_s_, len(X_t_train), len(X_s)
 
     if mode == "obst_et_al":
-        X_s, y_s = np.vstack(l_X_s), np.concatenate(l_y_s)
+        X_s = np.vstack(l_X_s)
+        y_s = np.concatenate(l_y_s)
         fit_s = _fit_stats(X_s, y_s, lbda_s)
         fit_t = _fit_stats(X_t_train, y_t_train, lbda_t)
         alpha_ft = _default_alpha(fit_t[1], factor=10.0)
@@ -429,37 +565,141 @@ def regression(
     raise ValueError(f"Unknown mode: {mode}")
 
 
-target_single_regression = partial(regression, mode="target")
-source_single_regression = partial(regression, mode="source")
-full_collaboration_regression = partial(regression, mode="full")
-dynamic_greedy_collaboration_regression = partial(regression, mode="dynamic-greedy")
-dynamic_uniform_collaboration_regression = partial(regression, mode="dynamic-uniform")
-oracle_dynamic_collaboration_regression = partial(regression, mode="oracle_dynamic")
-zhang_et_al_regression = partial(regression, mode="zhang_et_al")
-chen_et_al_regression = partial(regression, mode="chen_et_al")
-obst_et_al_regression = partial(regression, mode="obst_et_al")
-hierarchical_regression = partial(regression, mode="hierarchical")
+def classif(
+    theta_t: np.ndarray,
+    X_t_train: np.ndarray,
+    y_t_train: np.ndarray,
+    X_t_val: np.ndarray,
+    l_X_s: list[np.ndarray],
+    l_y_s: list[np.ndarray],
+    sigma_t: float,
+    sigma_s: float,
+    lbda_t: float,
+    lbda_s: float,
+    lbda_c: float,
+    alpha: float = 0.05,
+    mode: str = "target",
+) -> Tuple[np.ndarray, int, int]:
+    """Dispatch classification modes and return (w, n_t, n_s)."""
+    _ = (theta_t, X_t_val, sigma_t, sigma_s, alpha)
 
-target_single_regression.__doc__ = _REGR_DOC
-source_single_regression.__doc__ = _REGR_DOC
-full_collaboration_regression.__doc__ = _REGR_DOC
-dynamic_greedy_collaboration_regression.__doc__ = _REGR_DOC
-dynamic_uniform_collaboration_regression.__doc__ = _REGR_DOC
-oracle_dynamic_collaboration_regression.__doc__ = _REGR_DOC
-zhang_et_al_regression.__doc__ = _REGR_DOC
-chen_et_al_regression.__doc__ = _REGR_DOC
-obst_et_al_regression.__doc__ = _REGR_DOC
-hierarchical_regression.__doc__ = _REGR_DOC
+    if mode == "target":
+        return _ridge(X_t_train, y_t_train, lbda_t), len(X_t_train), 0
+
+    if mode == "source":
+        X_s = np.vstack(l_X_s)
+        y_s = np.concatenate(l_y_s)
+        return _ridge(X_s, y_s, lbda_s), 0, len(X_s)
+
+    if mode == "full":
+        X_s = np.vstack(l_X_s)
+        y_s = np.concatenate(l_y_s)
+        X_c = np.r_[X_t_train, X_s]
+        y_c = np.r_[y_t_train, y_s]
+        return _ridge(X_c, y_c, lbda_c), len(X_t_train), len(X_s)
+
+    if mode == "hierarchical":
+        X_s = np.vstack(l_X_s)
+        y_s = np.concatenate(l_y_s)
+        w = _hierarchical_theta(
+            X_t_train=X_t_train,
+            y_t_train=y_t_train,
+            X_s=X_s,
+            y_s=y_s,
+            sigma_t=1.0,
+            sigma_s=1.0,
+            lbda_t=lbda_t,
+            lbda_s=lbda_s,
+            lbda_c=lbda_c,
+        )
+        return w, len(X_t_train), len(X_s)
+
+    raise ValueError(f"Unknown mode: {mode}")
+
+
+target_regr = partial(regr, mode="target")
+source_regr = partial(regr, mode="source")
+full_regr = partial(regr, mode="full")
+dyn_greedy_regr = partial(regr, mode="dynamic-greedy")
+dyn_uniform_regr = partial(regr, mode="dynamic-uniform")
+oracle_dyn_regr = partial(regr, mode="oracle_dynamic")
+zhang_regr = partial(regr, mode="zhang_et_al")
+chen_regr = partial(regr, mode="chen_et_al")
+obst_regr = partial(regr, mode="obst_et_al")
+hier_regr = partial(regr, mode="hierarchical")
+
+target_classif = partial(classif, mode="target")
+source_classif = partial(classif, mode="source")
+full_classif = partial(classif, mode="full")
+hier_classif = partial(classif, mode="hierarchical")
+
+target_regr.__doc__ = _REGR_DOC
+source_regr.__doc__ = _REGR_DOC
+full_regr.__doc__ = _REGR_DOC
+dyn_greedy_regr.__doc__ = _REGR_DOC
+dyn_uniform_regr.__doc__ = _REGR_DOC
+oracle_dyn_regr.__doc__ = _REGR_DOC
+zhang_regr.__doc__ = _REGR_DOC
+chen_regr.__doc__ = _REGR_DOC
+obst_regr.__doc__ = _REGR_DOC
+hier_regr.__doc__ = _REGR_DOC
+
+_CLASS_DOC = dedent(
+    """
+    Estimate the linear classifier from a combination of target and source.
+
+    Parameters
+    ----------
+    theta_t : ndarray of shape (d,)
+        Ground-truth parameters for the target dataset (oracle mode only).
+    X_t_train, y_t_train : ndarray
+        Training feature matrices and targets for the target dataset.
+    X_t_val : ndarray
+        Validation features for target.
+    l_X_s, l_y_s : list of ndarray of shape (n_t,), (n_s,)
+        Training feature matrices and targets for the source datasets.
+    sigma_t, sigma_s : float
+        Noise standard deviations.
+    lbda_t, lbda_s, lbda_c : float
+        Ridge penalties.
+    alpha : float
+        LCB parameter
+
+    Returns
+    -------
+    w : ndarray
+        Estimated linear classifier weights.
+    n_t : int
+        Number of target samples used.
+    n_s : int
+        Number of source samples used.
+    """
+)
+
+target_classif.__doc__ = _CLASS_DOC
+source_classif.__doc__ = _CLASS_DOC
+full_classif.__doc__ = _CLASS_DOC
+hier_classif.__doc__ = _CLASS_DOC
 
 __all__ = [
-    "target_single_regression",
-    "source_single_regression",
-    "full_collaboration_regression",
-    "dynamic_greedy_collaboration_regression",
-    "dynamic_uniform_collaboration_regression",
-    "oracle_dynamic_collaboration_regression",
-    "zhang_et_al_regression",
-    "chen_et_al_regression",
-    "obst_et_al_regression",
-    "hierarchical_regression",
+    "compute_delta_regr",
+    "compute_delta_regr_variance",
+    "compute_delta_regr_lower_bound",
+    "opt_lambda",
+    "regr",
+    "classif",
+    "target_regr",
+    "source_regr",
+    "full_regr",
+    "dyn_greedy_regr",
+    "dyn_uniform_regr",
+    "oracle_dyn_regr",
+    "zhang_regr",
+    "chen_regr",
+    "obst_regr",
+    "hier_regr",
+    "target_classif",
+    "source_classif",
+    "full_classif",
+    "hier_classif",
 ]
