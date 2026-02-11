@@ -18,7 +18,7 @@ def _set_nice_log_xticks(ax):
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x)}"))
 
 
-def plot_stats_evolution(
+def plot_stats_evol(
     results: Iterable[Iterable[Tuple[str, str, str, np.ndarray]]],
     *,
     axis=None,
@@ -259,3 +259,6 @@ def plot_stats_evolution(
     if verbose:
         print("[INFO] Added plots to provided axis.")
     return ax.figure, ax
+
+
+plot_stats_evolution = plot_stats_evol

@@ -3,19 +3,25 @@ from __future__ import annotations
 from typing import List, Tuple
 import numpy as np
 from dyntr.augmenter import SampleAugmenter
-from dyntr.datasets import fetch_synthetic_datasets
-from dyntr.statistics import compute_delta, opt_lambda
+from dyntr.datasets import fetch_synthetic_classification_datasets, fetch_synthetic_datasets
+from dyntr.linear import compute_delta_regr, opt_lambda
 from dyntr.utils import check_random_state
-from dyntr.regression import (
-    chen_et_al_regression,
-    dynamic_greedy_collaboration_regression,
-    full_collaboration_regression,
-    hierarchical_regression,
-    obst_et_al_regression,
-    oracle_dynamic_collaboration_regression,
-    source_single_regression,
-    target_single_regression,
-    zhang_et_al_regression,
+from dyntr.linear import (
+    chen_regr,
+    dyn_greedy_regr,
+    full_regr,
+    hier_regr,
+    obst_regr,
+    oracle_dyn_regr,
+    source_regr,
+    target_regr,
+    zhang_regr,
+)
+from dyntr.linear import (
+    full_classif,
+    hier_classif,
+    source_classif,
+    target_classif,
 )
 from config import get_config
 
@@ -37,7 +43,7 @@ def _concat_sources(l_X_s, l_y_s):
     return X_s, y_s
 
 
-def run_one_delta_illustration(
+def run_one_delta_illus(
     n_samples_target: int,
     theta_t: np.ndarray,
     theta_s: np.ndarray,
@@ -164,7 +170,7 @@ def run_one_delta_illustration(
         A_c_inv = np.linalg.inv(G_s + G_t + (lbda_s + lbda_t) * eye)
         theta_c_hat = A_c_inv @ (b_s + b_t)
 
-        Delta_hat = compute_delta(
+        Delta_hat = compute_delta_regr(
             theta_s=theta_s_hat,
             theta_t=theta_t_hat,
             G_s=G_s,
@@ -197,7 +203,7 @@ def run_one_delta_illustration(
     ]
 
 
-def run_one_performance_comparison(
+def run_one_regr_perf_cmp(
     n_samples_target: int,
     theta_t: np.ndarray,
     theta_s: np.ndarray,
@@ -315,15 +321,15 @@ def run_one_performance_comparison(
         return np.linalg.norm(X_t_test @ (theta - theta_t)) ** 2 / len(X_t_test)
 
     methods = [
-        ("Target-only ridge", "tab:blue", "dotted", target_single_regression),
-        ("Source-only ridge", "tab:blue", "dashed", source_single_regression),
-        ("Mixed-task ridge", "tab:blue", "solid", full_collaboration_regression),
-        ("Proposed (greedy)", "tab:orange", "solid", dynamic_greedy_collaboration_regression),
-        ("Proposed (oracle)", "tab:red", "solid", oracle_dynamic_collaboration_regression),
-        ("Zhang et al, 2025", "tab:purple", "solid", zhang_et_al_regression),
-        ("Chen et al, 2014", "tab:gray", "solid", chen_et_al_regression),
-        ("Obst et al, 2021", "tab:green", "solid", obst_et_al_regression),
-        ("Hierarchical regression", "tab:brown", "solid", hierarchical_regression),
+        ("Target-only ridge", "tab:blue", "dotted", target_regr),
+        ("Source-only ridge", "tab:blue", "dashed", source_regr),
+        ("Mixed-task ridge", "tab:blue", "solid", full_regr),
+        ("Proposed (greedy)", "tab:orange", "solid", dyn_greedy_regr),
+        ("Proposed (oracle)", "tab:red", "solid", oracle_dyn_regr),
+        ("Zhang et al, 2025", "tab:purple", "solid", zhang_regr),
+        ("Chen et al, 2014", "tab:gray", "solid", chen_regr),
+        ("Obst et al, 2021", "tab:green", "solid", obst_regr),
+        ("Hierarchical regression", "tab:brown", "solid", hier_regr),
     ]
     series = {name: {"err": [], "mse": [], "n_s": []} for name, *_ in methods}
 
@@ -370,7 +376,150 @@ def run_one_performance_comparison(
     }
 
 
-def run_one_epsilon_influence(
+def run_one_classif_perf_cmp(
+    n_samples_target: int,
+    theta_t: np.ndarray,
+    theta_s: np.ndarray,
+    X_t_train: np.ndarray,
+    y_t_train: np.ndarray,
+    X_t_val: np.ndarray,
+    y_t_val: np.ndarray,
+    X_t_test: np.ndarray,
+    y_t_test: np.ndarray,
+    l_X_s: list[np.ndarray],
+    l_y_s: list[np.ndarray],
+    sigma_t: float,
+    sigma_s: float,
+    lbda_s: float,
+    alpha: float = 0.1,
+    min_n_samples_target: int = 100,
+    seed: int | None = None,
+    synthetic_data: bool = True,
+) -> List[Tuple[str, str, str, np.ndarray]]:
+    """Run the classification experiment for a vector of sample sizes."""
+    for X_s in l_X_s:
+        assert X_s.shape[1] == l_X_s[0].shape[1]
+    assert X_t_train.shape[1] == l_X_s[0].shape[1]
+    assert X_t_val.shape[1] == l_X_s[0].shape[1]
+    assert X_t_test.shape[1] == l_X_s[0].shape[1]
+
+    rng = check_random_state(seed)
+    _, d = l_X_s[0].shape
+    min_n_samples_target = max(2 * d, min_n_samples_target)
+    nn_samples_target = np.logspace(
+        np.log10(min_n_samples_target),
+        np.log10(n_samples_target + 1),
+        num=N_POINTS,
+        dtype=int,
+    )
+    nn_samples_target = np.unique(nn_samples_target)
+
+    X_t_train = X_t_train.copy()
+    y_t_train = y_t_train.copy()
+    y_t_val = y_t_val.copy()
+    X_t_test = X_t_test.copy()
+    y_t_test = y_t_test.copy()
+    l_X_s = [X_s.copy() for X_s in l_X_s]
+    l_y_s = [y_s.copy() for y_s in l_y_s]
+
+    X_t_train = np.array(X_t_train, copy=True, order="C")
+    X_t_val = np.array(X_t_val, copy=True, order="C")
+    X_t_test = np.array(X_t_test, copy=True, order="C")
+    l_X_s = [np.array(X_s, copy=True, order="C") for X_s in l_X_s]
+
+    if synthetic_data:
+        class_data = fetch_synthetic_classification_datasets(
+            n_t_train=X_t_train.shape[0],
+            n_t_val=X_t_val.shape[0],
+            n_t_test=X_t_test.shape[0],
+            n_s_train=l_X_s[0].shape[0],
+            n_s_val=1,
+            n_s_test=1,
+            d=X_t_train.shape[1],
+            eps=0.0,
+            sigma_t=sigma_t,
+            sigma_s=sigma_s,
+            theta_t_and_theta_s=(theta_t, theta_s),
+            n_sources=len(l_X_s),
+            random_state=seed,
+        )
+        _, y_t_train = class_data["target_train"]
+        _, y_t_val = class_data["target_val"]
+        _, y_t_test = class_data["target_test"]
+        _, l_y_s = class_data["source_train"]
+    else:
+        idx_t = rng.permutation(X_t_train.shape[0])
+        X_t_train = X_t_train[idx_t]
+        y_t_train = y_t_train[idx_t]
+        for i, (X_s, y_s) in enumerate(zip(l_X_s, l_y_s)):
+            idx_s = rng.permutation(X_s.shape[0])
+            l_X_s[i], l_y_s[i] = X_s[idx_s], y_s[idx_s]
+
+    y_t_train = np.array(y_t_train, copy=True, order="C")
+    y_t_val = np.array(y_t_val, copy=True, order="C")
+    y_t_test = np.array(y_t_test, copy=True, order="C")
+    l_y_s = [np.array(y_s, copy=True, order="C") for y_s in l_y_s]
+
+    lbda_t = opt_lambda(X_t_train, y_t_train, X_t_val, y_t_val)
+
+    def _acc(pred):
+        return np.mean(pred == y_t_test)
+
+    def _predict(theta):
+        return np.where(X_t_test @ theta >= 0.0, 1.0, -1.0)
+
+    methods = [
+        ("Target-only ridge", "tab:blue", "dotted", target_classif),
+        ("Source-only ridge", "tab:blue", "dashed", source_classif),
+        ("Mixed-task ridge", "tab:blue", "solid", full_classif),
+        ("Hierarchical classification", "tab:brown", "solid", hier_classif),
+    ]
+    series = {name: {"acc": [], "n_s": []} for name, *_ in methods}
+
+    kwargs = dict(
+        theta_t=theta_t,
+        X_t_val=X_t_val,
+        l_X_s=l_X_s,
+        l_y_s=l_y_s,
+        lbda_t=lbda_t,
+        lbda_s=lbda_s,
+        lbda_c=lbda_s + lbda_t,
+        sigma_t=sigma_t,
+        sigma_s=sigma_s,
+        alpha=alpha,
+    )
+
+    for n_t in nn_samples_target:
+        kwargs["X_t_train"] = X_t_train[:n_t]
+        kwargs["y_t_train"] = y_t_train[:n_t]
+
+        for name, _, _, fn in methods:
+            theta, _, n_s = fn(**kwargs)
+            series[name]["acc"].append(_acc(_predict(theta)))
+            series[name]["n_s"].append(n_s)
+
+    def _pack(metric_key):
+        return [
+            (
+                name,
+                color,
+                style,
+                np.array(nn_samples_target + 1),
+                np.array(series[name][metric_key]),
+            )
+            for name, color, style, _ in methods
+        ]
+
+    return {
+        "acc:": _pack("acc"),
+        "n_s:": _pack("n_s"),
+    }
+
+
+run_one_perf_cmp = run_one_regr_perf_cmp
+
+
+def run_one_eps_infl(
     d: int,
     l_eps: float,
     lbda_s: float,
@@ -436,7 +585,7 @@ def run_one_epsilon_influence(
     ]
 
 
-def run_one_sigma_influence(
+def run_one_sigma_infl(
     d: int,
     eps: float,
     l_sigma_s: np.ndarray,
@@ -504,7 +653,7 @@ def run_one_sigma_influence(
     ]
 
 
-def run_one_lbda_influence(
+def run_one_lbda_infl(
     theta_t: np.ndarray,
     theta_s: np.ndarray,
     X_t_train: np.ndarray,
