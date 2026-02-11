@@ -27,7 +27,7 @@ jobs:
         env:
           MPLBACKEND: Agg
         run: |
-          pytest --cov=dyntr --cov-report=term-missing --cov-report=xml --cov-fail-under=65
+          pytest --cov=dyntr --cov-report=term-missing --cov-report=xml --cov-fail-under=70
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:

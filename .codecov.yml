@@ -1,23 +1,10 @@
-ignore:
-  - "benchmark/**"
-  - "dyntr/tests/"
-
 coverage:
   status:
+    project:
+      default:
+        target: auto
+        threshold: 0.10
     patch:
       default:
-        threshold: 5%
-
-flag_management:
-  individual_flags:
-    - name: smart-tests
-      carryforward: true
-      carryforward_mode: "labels"
-      statuses:
-        - type: "project"
-        - type: "patch"
-
-cli:
-  plugins:
-    pycoverage:
-      report_type: "json"
+        target: auto
+        threshold: 0.10
