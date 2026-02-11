@@ -1,4 +1,4 @@
-"""Statistics test coverage for dyntr.statistics."""
+"""Statistics test coverage for dyntr.linear."""
 from __future__ import annotations
 import importlib
 import os
@@ -6,7 +6,7 @@ import numpy as np
 
 os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
 
-import dyntr.statistics as stats  # noqa
+import dyntr.linear as stats  # noqa
 
 importlib.reload(stats)
 
@@ -18,7 +18,7 @@ def _make_linear_data(rng, n, d, sigma):
     return X, y, theta
 
 
-def test_compute_delta_and_variance_are_finite():
+def test_compute_delta_regr_and_variance_are_finite():
     """Compute-delta helpers should return finite values."""
     rng = np.random.default_rng(0)
     d = 3
@@ -35,7 +35,7 @@ def test_compute_delta_and_variance_are_finite():
     A_s_inv = np.linalg.inv(G_s + lbda_s * eye)
     A_c_inv = np.linalg.inv(G_t + G_s + lbda_c * eye)
 
-    delta = stats.compute_delta(
+    delta = stats.compute_delta_regr(
         theta_t=theta_t,
         theta_s=theta_s,
         G_s=G_s,
@@ -49,7 +49,7 @@ def test_compute_delta_and_variance_are_finite():
         lbda_t=lbda_t,
         lbda_s=lbda_s,
     )
-    var = stats.compute_delta_variance(
+    var = stats.compute_delta_regr_variance(
         theta_s=theta_s,
         theta_t=theta_t,
         G_s=G_s,
@@ -63,7 +63,7 @@ def test_compute_delta_and_variance_are_finite():
         lbda_t=lbda_t,
         lbda_s=lbda_s,
     )
-    delta_lb = stats.compute_delta_lower_bound(
+    delta_lb = stats.compute_delta_regr_lower_bound(
         theta_t=theta_t,
         theta_s=theta_s,
         G_t=G_t,

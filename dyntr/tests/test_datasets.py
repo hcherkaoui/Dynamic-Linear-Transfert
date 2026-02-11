@@ -4,11 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 import dyntr.datasets as datasets_mod
-from dyntr.datasets import fetch_synthetic_datasets, generate_thetas
+from dyntr.datasets import fetch_synthetic_datasets
 from dyntr.datasets._datasets import (
     _assert_is_regression,
     _autodetect_user_id,
     _condition_blocks,
+    _generate_thetas,
     _guess_column,
     _load_boston_dataset,
     _load_hillstrom_dataset,
@@ -82,17 +83,17 @@ def test_fetch_synthetic_datasets_invalid():
 
 def test_generate_thetas_validation():
     with pytest.raises(ValueError):
-        generate_thetas(0, 0.5)
+        _generate_thetas(0, 0.5)
     with pytest.raises(ValueError):
-        generate_thetas(2, -0.1)
+        _generate_thetas(2, -0.1)
 
-    theta_s, theta_t = generate_thetas(3, 0.0, random_state=0)
+    theta_s, theta_t = _generate_thetas(3, 0.0, random_state=0)
     assert theta_s.shape == (3,)
     assert theta_t.shape == (3,)
     assert np.isclose(np.linalg.norm(theta_s - theta_t), 0.0)
 
     rng = np.random.default_rng(123)
-    theta_s, theta_t = generate_thetas(2, 0.1, random_state=rng)
+    theta_s, theta_t = _generate_thetas(2, 0.1, random_state=rng)
     assert theta_s.shape == (2,)
     assert theta_t.shape == (2,)
 
