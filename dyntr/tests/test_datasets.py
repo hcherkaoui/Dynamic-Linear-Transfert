@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import dyntr.datasets as datasets_mod
-from dyntr.datasets import fetch_synthetic_datasets
+from dyntr.datasets import synth_regr_data
 from dyntr.datasets._datasets import (
     _assert_is_regression,
     _autodetect_user_id,
@@ -17,7 +17,7 @@ from dyntr.datasets._datasets import (
 
 
 def test_fetch_synthetic_datasets_basic():
-    out = fetch_synthetic_datasets(
+    out = synth_regr_data(
         n_t_train=20,
         n_t_val=5,
         n_t_test=5,
@@ -68,23 +68,23 @@ def test_fetch_synthetic_datasets_basic():
 
 def test_fetch_synthetic_datasets_invalid():
     with pytest.raises(ValueError):
-        fetch_synthetic_datasets(d=0)
+        synth_regr_data(d=0)
     with pytest.raises(ValueError):
-        fetch_synthetic_datasets(n_t_train=0)
+        synth_regr_data(n_t_train=0)
     with pytest.raises(ValueError):
-        fetch_synthetic_datasets(d=1, eps=0.5)
+        synth_regr_data(d=1, eps=0.5)
     with pytest.raises(ValueError):
-        fetch_synthetic_datasets(n_s_train=0)
+        synth_regr_data(n_s_train=0)
     with pytest.raises(ValueError):
-        fetch_synthetic_datasets(sigma_t=-0.1)
+        synth_regr_data(sigma_t=-0.1)
     with pytest.raises(ValueError):
-        fetch_synthetic_datasets(theta_t_and_theta_s=(np.zeros(3), np.zeros(2)), d=3)
+        synth_regr_data(theta_t_and_theta_s=(np.zeros(3), np.zeros(2)), d=3)
 
 
 def test_generate_thetas_validation():
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         _generate_thetas(0, 0.5)
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         _generate_thetas(2, -0.1)
 
     theta_s, theta_t = _generate_thetas(3, 0.0, random_state=0)
@@ -148,7 +148,7 @@ def test_fetch_real_datasets_mocked(monkeypatch):
     test_data = (X[:3], y[:3]), (X[3:6], y[3:6])
     monkeypatch.setattr(datasets_mod, "_load_boston_dataset", lambda: (train_data, test_data))
 
-    out = datasets_mod.fetch_real_datasets(
+    out = datasets_mod.real_regr_data(
         "boston",
         n_t_train=3,
         n_t_val=1,
@@ -179,10 +179,10 @@ def test_fetch_real_datasets_mocked(monkeypatch):
     assert l_y_s[0].shape[0] == 3
 
     with pytest.raises(ValueError):
-        datasets_mod.fetch_real_datasets("unknown")
+        datasets_mod.real_regr_data("unknown")
 
     with pytest.raises(ValueError):
-        datasets_mod.fetch_real_datasets(
+        datasets_mod.real_regr_data(
             "boston",
             n_t_train=1,
             n_t_val=0,
@@ -194,7 +194,7 @@ def test_fetch_real_datasets_mocked(monkeypatch):
             permutation=False,
         )
 
-    out = datasets_mod.fetch_real_datasets(
+    out = datasets_mod.real_regr_data(
         "boston",
         n_t_train=2,
         n_t_val=0,

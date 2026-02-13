@@ -1,5 +1,12 @@
 """Tests for benchmark.config."""
-from benchmark.config import get_config
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from benchmark.experiments import get_config  # noqa
 
 
 def test_config_has_expected_types():

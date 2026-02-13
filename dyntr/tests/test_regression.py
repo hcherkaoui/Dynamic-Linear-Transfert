@@ -7,7 +7,7 @@ from dyntr.linear import (
     full_regr,
     hier_regr,
     obst_regr,
-    oracle_dyn_regr,
+    oracle_greedy_regr,
     regr,
     source_regr,
     target_regr,
@@ -37,7 +37,6 @@ def test_regression_modes_run():
     d = X_t.shape[1]
     lbda_t = 1.0
     lbda_s = 0.5
-    lbda_c = lbda_t + lbda_s
     sigma_t = 0.1
     sigma_s = 0.2
     alpha = 0.1
@@ -51,7 +50,6 @@ def test_regression_modes_run():
         X_t_val=X_t_val,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_c,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -69,7 +67,6 @@ def test_regression_modes_run():
         X_t_val=X_t_val,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_c,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -87,7 +84,6 @@ def test_regression_modes_run():
         X_t_val=X_t_val,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_c,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -105,7 +101,6 @@ def test_regression_modes_run():
         X_t_val=X_t_val,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_c,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -114,7 +109,7 @@ def test_regression_modes_run():
     assert n_t == len(X_t)
     assert 0 <= n_s <= len(X_s)
 
-    theta, n_t, n_s = oracle_dyn_regr(
+    theta, n_t, n_s = oracle_greedy_regr(
         theta_t=theta_t,
         X_t_train=X_t,
         l_X_s=[X_s],
@@ -123,7 +118,6 @@ def test_regression_modes_run():
         X_t_val=X_t_val,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_c,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -141,7 +135,6 @@ def test_regression_modes_run():
         X_t_val=X_t_val,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_c,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -160,7 +153,6 @@ def test_regression_modes_run():
         X_t_val=X_t_val,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_c,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -178,7 +170,6 @@ def test_regression_modes_run():
         X_t_val=X_t_val,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_c,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -196,7 +187,6 @@ def test_regression_modes_run():
         X_t_val=X_t_val,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_c,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -220,7 +210,6 @@ def test_regression_unknown_mode_raises():
             l_y_s=[y_s],
             lbda_t=1.0,
             lbda_s=1.0,
-            lbda_c=2.0,
             sigma_t=0.1,
             sigma_s=0.1,
             alpha=0.1,
