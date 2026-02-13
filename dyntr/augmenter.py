@@ -249,14 +249,7 @@ def select_multi_source(
     init_state: object,
     chunk_size: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    if n_rounds <= 0:
-        return (
-            np.empty((0,), float),
-            np.empty((0,), int),
-            np.empty((0,)),
-            np.empty((0,)),
-            np.empty((0,), int),
-        )
+
     if strategy not in {"greedy", "uniform"}:
         raise ValueError("strategy must be in {'greedy','uniform'}.")
 
@@ -270,24 +263,27 @@ def select_multi_source(
     state = init_state
     n_selected = 0
 
-    def active_sources() -> list[int]:
-        return [s for s in range(n_src) if rem[s].size > 0]
-
     while n_selected < n_rounds:
-        act = active_sources()
+        act = [s for s in range(n_src) if rem[s].size > 0]
         if not act:
             break
 
+        best_delta = -np.inf
+        best_state = None
+        best_s = -1
+        best_chunk_idx = None
+
         if strategy == "uniform":
             best_s = int(rng.choice(act))
-            best_state = None
-            best_delta = None
-            best_chunk_idx = None
+            r = rem[best_s]
+            size = min(int(chunk_size), int(r.size), int(n_rounds - n_selected))
+            if size <= 0:
+                break
+            best_chunk_idx = r[:size]
+            X_b = Xs[best_s][best_chunk_idx]
+            y_b = ys[best_s][best_chunk_idx]
+            best_delta, best_state = score_and_update_batch(state, X_b, y_b)
         else:
-            best_delta = -np.inf
-            best_state = None
-            best_s = -1
-            best_chunk_idx = None
             for s in act:
                 r = rem[s]
                 if r.size <= 0:
@@ -298,7 +294,7 @@ def select_multi_source(
                 y_b = ys[s][idx]
                 d_new, st_new = score_and_update_batch(state, X_b, y_b)
                 if d_new > best_delta:
-                    best_delta = float(d_new)
+                    best_delta = d_new
                     best_state = st_new
                     best_s = int(s)
                     best_chunk_idx = np.array(idx, copy=True)
@@ -306,19 +302,9 @@ def select_multi_source(
             if best_state is None:
                 break
 
-        r = rem[best_s]
-        size = min(int(chunk_size), int(r.size), int(n_rounds - n_selected))
-        if size <= 0:
-            break
-
-        if strategy == "uniform":
-            best_chunk_idx = r[:size]
-            X_b = Xs[best_s][best_chunk_idx]
-            y_b = ys[best_s][best_chunk_idx]
-            best_delta, best_state = score_and_update_batch(state, X_b, y_b)
-            best_delta = float(best_delta)
-        else:
-            if best_chunk_idx is None:
+            r = rem[best_s]
+            size = min(int(chunk_size), int(r.size), int(n_rounds - n_selected))
+            if size <= 0:
                 break
             if best_chunk_idx.size != size:
                 remaining = r[~np.isin(r, best_chunk_idx)]
@@ -327,7 +313,6 @@ def select_multi_source(
                 X_b = Xs[best_s][best_chunk_idx]
                 y_b = ys[best_s][best_chunk_idx]
                 best_delta, best_state = score_and_update_batch(state, X_b, y_b)
-                best_delta = float(best_delta)
 
         deltas.append(float(best_delta))
         sel_src.append(int(best_s))
@@ -340,13 +325,8 @@ def select_multi_source(
 
     X_seq = np.vstack(X_sel) if X_sel else np.empty((0, Xs[0].shape[1] if Xs else 0))
     y_seq = np.concatenate(y_sel) if y_sel else np.empty((0,))
-    return (
-        np.asarray(deltas, dtype=float),
-        np.asarray(sel_src, dtype=int),
-        X_seq,
-        y_seq,
-        np.asarray(chunk_sizes, dtype=int),
-    )
+    return (np.asarray(deltas, dtype=float), np.asarray(sel_src, dtype=int),
+            X_seq, y_seq, np.asarray(chunk_sizes, dtype=int),)
 
 
 class _AugmenterBase(BaseEstimator):

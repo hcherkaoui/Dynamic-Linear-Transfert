@@ -8,6 +8,19 @@ import numpy as np
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
+def _sigmoid_stable(u: np.ndarray) -> np.ndarray:
+    out = np.empty(u.shape[0], dtype=np.float64)
+    for i in range(u.shape[0]):
+        ui = u[i]
+        if ui >= 0.0:
+            out[i] = 1.0 / (1.0 + np.exp(-ui))
+        else:
+            eu = np.exp(ui)
+            out[i] = eu / (1.0 + eu)
+    return out
+
+
+@numba.jit(nopython=True, cache=True, fastmath=True)
 def compute_delta_regr(
     theta_t: np.ndarray,
     theta_s: np.ndarray,
@@ -94,9 +107,9 @@ def compute_delta_regr_lower_bound(
     X_val: np.ndarray,
     sigma_t: float,
     sigma_s: float,
-    lbda_t=1.0,
-    lbda_s=1.0,
-    alpha=0.01,
+    lbda_t: float = 1.0,
+    lbda_s: float = 1.0,
+    alpha: float = 0.01,
 ) -> float:
     delta_hat = compute_delta_regr(
         theta_t,
@@ -132,6 +145,84 @@ def compute_delta_regr_lower_bound(
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
+def compute_delta_classif(
+    theta_t: np.ndarray,
+    theta_c: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+) -> float:
+    n = X_val.shape[0]
+    if n == 0:
+        return 0.0
+
+    for i in range(n):
+        assert (y_val[i] == 1.0) or (y_val[i] == -1.0)
+
+    s_t = X_val @ theta_t
+    s_c = X_val @ theta_c
+
+    ell_t = _sigmoid_stable(-y_val * s_t)
+    ell_c = _sigmoid_stable(-y_val * s_c)
+
+    return np.mean(ell_t) - np.mean(ell_c)
+
+
+@numba.jit(nopython=True, cache=True, fastmath=True)
+def compute_delta_classif_variance(
+    theta_t: np.ndarray,
+    theta_c: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+) -> float:
+    n = X_val.shape[0]
+    if n <= 1:
+        return 0.0
+
+    for i in range(n):
+        assert (y_val[i] == 1.0) or (y_val[i] == -1.0)
+
+    s_t = X_val @ theta_t
+    s_c = X_val @ theta_c
+
+    ell_t = _sigmoid_stable(-y_val * s_t)
+    ell_c = _sigmoid_stable(-y_val * s_c)
+
+    d = ell_t - ell_c
+    mean_d = np.mean(d)
+
+    var_pop = np.mean(d * d) - mean_d * mean_d
+    if var_pop < 0.0:
+        var_pop = 0.0
+
+    return var_pop / (n - 1.0)
+
+
+@numba.jit(nopython=True, cache=True, fastmath=True)
+def compute_delta_classif_lower_bound(
+    theta_t: np.ndarray,
+    theta_c: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    alpha: float = 0.01,
+) -> float:
+    delta_hat = compute_delta_classif(
+        theta_t,
+        theta_c,
+        X_val,
+        y_val,
+    )
+    var_delta_hat = compute_delta_classif_variance(
+        theta_t,
+        theta_c,
+        X_val,
+        y_val,
+    )
+    if var_delta_hat < 0.0:
+        var_delta_hat = 0.0
+    return delta_hat - alpha * np.sqrt(var_delta_hat)
+
+
+@numba.jit(nopython=True, cache=True, fastmath=True)
 def opt_lambda(
     X: np.ndarray,
     y: np.ndarray,
@@ -158,6 +249,21 @@ def _ridge(
     lbda: float,
 ) -> np.ndarray:
     return np.linalg.solve(X.T @ X + lbda * np.eye(X.shape[1]), X.T @ y)
+
+
+def _check_n_max(l_X_s: list[np.ndarray], n_max: int | None) -> int:
+    if n_max is None:
+        n_max = max(len(X_s) for X_s in l_X_s) if l_X_s else 0
+    if len(l_X_s) > 1 and n_max > 0:
+        n_max = max(1, int(n_max // len(l_X_s)))
+    return int(n_max)
+
+
+def _check_strategy(mode: str) -> str:
+    strategy = "Unknown"
+    strategy = "uniform" if "uniform" in mode else strategy
+    strategy = "greedy" if "greedy" in mode else strategy
+    return strategy
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
@@ -287,39 +393,6 @@ def _select_k(
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
-def _opt_lambda_corrected_aic(
-    theta_t: np.ndarray,
-    theta_s: np.ndarray,
-    X_t_train: np.ndarray,
-    y_t_train: np.ndarray,
-    G_t: np.ndarray,
-    G_s_inv_G_t: np.ndarray,
-    G_t_val: np.ndarray,
-    eye: np.ndarray,
-    lbda_grid: np.ndarray,
-) -> float:
-    n, _ = X_t_train.shape
-    best_aicc, best_lbda = np.inf, lbda_grid[0]
-    for lbda in lbda_grid:
-        W = np.linalg.solve(
-            G_t + lbda * (G_t_val @ G_s_inv_G_t) + lbda * G_t_val,
-            G_t + lbda * (G_t_val @ G_s_inv_G_t),
-        )
-        theta_c = W @ theta_t + (eye - W) @ theta_s
-        df = np.trace(W)
-        r = y_t_train - X_t_train @ theta_c
-        sigma_s = (r @ r) / max(1.0, n - df)
-        den = 1.0 - df + 2.0 / n
-        if den <= 0 or sigma_s <= 0:
-            aicc = np.inf
-        else:
-            aicc = n * np.log(sigma_s) + n * ((1.0 + df / n) / den)
-        if aicc < best_aicc:
-            best_aicc = aicc
-            best_lbda = lbda
-    return best_lbda
-
-
 def _hierarchical_theta(
     X_t_train: np.ndarray,
     y_t_train: np.ndarray,
@@ -329,35 +402,38 @@ def _hierarchical_theta(
     sigma_s: float,
     lbda_t: float,
     lbda_s: float,
-    lbda_c: float,
-) -> np.ndarray:
-    n_t, d = X_t_train.shape
-    n_s, d_s = X_s.shape
-    if d_s != d:
-        raise ValueError("X_t_train and X_s must have the same number of columns.")
+):
+    _, d = X_t_train.shape
+    assert X_s.shape[1] == d, "X_t_train and X_s must have the same dimension."
 
-    sig2_t = max(float(sigma_t) * float(sigma_t), 1e-12)
-    sig2_s = max(float(sigma_s) * float(sigma_s), 1e-12)
+    sig2_t = sigma_t ** 2
+    sig2_s = sigma_s ** 2
 
-    lambda_0 = max(float(lbda_c), 1e-8)
-    lambda_b = max(0.5 * (float(lbda_t) + float(lbda_s)), 1e-8)
+    lbda_c = 0.5 * (lbda_t + lbda_s)
+    w = 0.5
+    lambda_b = (w / (1.0 - w)) * lbda_c
+    lambda_0 = 0.1 * lbda_c
 
     G_t = (X_t_train.T @ X_t_train) / sig2_t
     G_s = (X_s.T @ X_s) / sig2_s
     g_t = (X_t_train.T @ y_t_train) / sig2_t
     g_s = (X_s.T @ y_s) / sig2_s
 
-    eye = np.eye(d)
-    A = (lambda_0 + 2.0 * lambda_b) * eye + G_t + G_s
-    b = g_t + g_s
-    mu = np.linalg.solve(A, b)
+    B_t = G_t + (lambda_b + lbda_t) * np.eye(d)
+    B_s = G_s + (lambda_b + lbda_s) * np.eye(d)
 
-    B = lambda_b * eye + G_t
-    theta_t = np.linalg.solve(B, g_t + lambda_b * mu)
+    B_t_inv = np.linalg.inv(B_t)
+    B_s_inv = np.linalg.inv(B_s)
+
+    A_mu = (lambda_0 + 2.0 * lambda_b) * np.eye(d) - (lambda_b * lambda_b) * (B_t_inv + B_s_inv)
+
+    mu = np.linalg.solve(A_mu, lambda_b * (B_t_inv @ g_t + B_s_inv @ g_s))
+    theta_t = np.linalg.solve(B_t, g_t + lambda_b * mu)
+
     return theta_t
 
 
-_REGR_DOC = dedent(
+_DOC = dedent(
     """
     Estimate the linear parameter from a combination of target and source.
 
@@ -401,154 +477,121 @@ def regr(
     sigma_s: float,
     lbda_t: float,
     lbda_s: float,
-    lbda_c: float,
     alpha: float = 0.05,
-    mode: str = "dynamic-greedy",
+    mode: str = "target",
     chunk_size: int = 5,
     n_max: int | None = None,
 ) -> Tuple[np.ndarray, int, int]:
-    """Dispatch regression modes and return (theta, n_t, n_s)."""
+    """Dispatch function modes and return (theta, n_t, n_s)."""
 
-    if mode == "target":
+    if mode == "target":  # simple baseline
         return _ridge(X_t_train, y_t_train, lbda_t), len(X_t_train), 0
 
-    if mode == "source":
+    if mode == "source":  # simple baseline: use all sources samples (only)
+
+        # Designed for a mono-source setting
         X_s = np.vstack(l_X_s)
         y_s = np.concatenate(l_y_s)
+
         return _ridge(X_s, y_s, lbda_s), 0, len(X_s)
 
-    if mode == "full":
+    if mode == "full":  # simple baseline: use all samples
+
+        # Designed for a mono-source setting
         X_s = np.vstack(l_X_s)
         y_s = np.concatenate(l_y_s)
         X_c = np.r_[X_t_train, X_s]
         y_c = np.r_[y_t_train, y_s]
-        return _ridge(X_c, y_c, lbda_c), len(X_t_train), len(X_s)
 
-    n_sources = len(l_X_s)
-    n_max_val = n_max
-    if n_max_val is None:
-        n_max_val = max(len(X_s) for X_s in l_X_s) if l_X_s else 0
-    if n_sources > 1 and n_max_val > 0:
-        n_max_val = max(1, int(n_max_val // n_sources))
+        return _ridge(X_c, y_c, lbda_t), len(X_t_train), len(X_s)
 
-    if mode in {"dynamic", "dynamic-greedy", "dynamic-uniform"}:
+    n_max = _check_n_max(l_X_s, n_max)
+
+    if "dynamic" in mode:
         from .augmenter import SampleAugmenter
 
-        strategy = "greedy" if mode in {"dynamic", "dynamic-greedy"} else "uniform"
-        if n_max_val is None or n_max_val <= 0:
-            aug = SampleAugmenter(alpha=alpha, strategy=strategy, chunk_size=chunk_size)
-        else:
-            aug = SampleAugmenter(
-                alpha=alpha,
-                strategy=strategy,
-                chunk_size=chunk_size,
-                n_max=int(n_max_val),
-            )
-        aug = aug.fit(
-            X_t_train,
-            y_t_train,
-            X_t_val,
-            lbda=lbda_t,
-            sigma=sigma_t,
-        )
-        X_c, y_c = aug.transform(
-            l_X_s,
-            l_y_s,
-            sigma=sigma_s,
-            lbda=lbda_s,
-        )
-        return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(aug.get_n_selected())
+        strategy = _check_strategy(mode)
+        assert strategy in ["uniform", "greedy"], f"Unknown strategy type, got {strategy}"
 
-    if mode in {"oracle_dynamic", "oracle-dynamic", "oracle-dynamic-greedy", "oracle-dynamic-uniform"}:
+        # our proposed approach
+        aug = SampleAugmenter(alpha=alpha, strategy=strategy, chunk_size=chunk_size, n_max=n_max)
+        aug = aug.fit(X_t_train, y_t_train, X_t_val, lbda=lbda_t, sigma=sigma_t)
+        X_c, y_c = aug.transform(l_X_s, l_y_s, sigma=sigma_s, lbda=lbda_s)
+
+        return _ridge(X_c, y_c, lbda_t + lbda_s), len(X_t_train), int(aug.get_n_selected())
+
+    if "oracle" in mode:
         from .augmenter import OracleSampleAugmenter
 
-        strategy = "uniform" if mode == "oracle-dynamic-uniform" else "greedy"
-        if n_max_val is None or n_max_val <= 0:
-            ora = OracleSampleAugmenter(strategy=strategy, chunk_size=chunk_size)
-        else:
-            ora = OracleSampleAugmenter(
-                n_max=int(n_max_val),
-                strategy=strategy,
-                chunk_size=chunk_size,
-            )
-        ora = ora.fit(
-            X_t_train,
-            y_t_train,
-            X_t_val,
-            lbda=lbda_t,
-            theta_t_true=theta_t,
-        )
-        X_c, y_c = ora.transform(
-            l_X_s,
-            l_y_s,
-            lbda=lbda_c,
-        )
-        return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(ora.get_n_selected())
+        strategy = _check_strategy(mode)
+        assert strategy in ["uniform", "greedy"], f"Unknown strategy type, got {strategy}"
 
-    if mode == "zhang_et_al":
+        # our proposed oracle approach
+        ora = OracleSampleAugmenter(strategy=strategy, chunk_size=chunk_size, n_max=n_max)
+        ora = ora.fit(X_t_train, y_t_train, X_t_val, lbda=lbda_t, theta_t_true=theta_t)
+        X_c, y_c = ora.transform(l_X_s, l_y_s, lbda=lbda_t + lbda_s)
+
+        return _ridge(X_c, y_c, lbda_t + lbda_s), len(X_t_train), int(ora.get_n_selected())
+
+    if mode == "zhang_et_al":  # Zhang et al, 2025: https://arxiv.org/pdf/2601.10779
         from .augmenter import UOWQSampleAugmenter
 
-        if n_max_val is None or n_max_val <= 0:
-            aug = UOWQSampleAugmenter()
-        else:
-            aug = UOWQSampleAugmenter(n_max=int(n_max_val))
-        aug = aug.fit(
-            X_t_train,
-            y_t_train,
-            X_t_val,
-            lbda=lbda_t,
-            sigma=sigma_t,
-        )
-        X_c, y_c = aug.transform(
-            l_X_s,
-            l_y_s,
-            lbda=lbda_s,
-            sigma=sigma_s,
-        )
-        return _ridge(X_c, y_c, lbda_c), len(X_t_train), int(aug.get_n_selected())
+        aug = UOWQSampleAugmenter(n_max=n_max)
+        aug = aug.fit(X_t_train, y_t_train, X_t_val, lbda=lbda_t, sigma=sigma_t)
+        X_c, y_c = aug.transform(l_X_s, l_y_s, lbda=lbda_s, sigma=sigma_s)
 
-    if mode == "chen_et_al":
+        return _ridge(X_c, y_c, lbda_t), len(X_t_train), int(aug.get_n_selected())
+
+    if mode == "chen_et_al":  # Chen et al, 2014: https://arxiv.org/pdf/1304.1837
+
+        # the original paper consider only a mono-source setting
         X_s = np.vstack(l_X_s)
         y_s = np.concatenate(l_y_s)
-        theta_t_ = _ridge(X=X_t_train, y=y_t_train, lbda=0.0)
-        theta_s_ = _ridge(X=X_s, y=y_s, lbda=0.0)
+
+        # for consistency we consider our ridge case (not the OLS as the original papier)
+        theta_t_ = _ridge(X=X_t_train, y=y_t_train, lbda=lbda_t)
+        theta_s_ = _ridge(X=X_s, y=y_s, lbda=lbda_s)
+
         eye = np.eye(X_t_train.shape[1])
         G_t, G_s, G_t_val = X_t_train.T @ X_t_train, X_s.T @ X_s, X_t_val.T @ X_t_val
         G_s_inv_G_t = np.linalg.solve(G_s, G_t)
-        lbda_grid = np.logspace(-3, 3, 100)
-        lbda = _opt_lambda_corrected_aic(
-            theta_t_,
-            theta_s_,
-            X_t_train,
-            y_t_train,
-            G_t,
-            G_s_inv_G_t,
-            G_t_val,
-            eye,
-            lbda_grid,
-        )
+
+        # tranfer matrix
+        lbda = 0.1  # as with our approach: not hyper-opt the amout of tranfer (ie alpha)
         W = np.linalg.solve(
             G_t + lbda * (G_t_val @ G_s_inv_G_t) + lbda * G_t_val,
             G_t + lbda * (G_t_val @ G_s_inv_G_t),
         )
         return W @ theta_t_ + (eye - W) @ theta_s_, len(X_t_train), len(X_s)
 
-    if mode == "obst_et_al":
+    if mode == "obst_et_al":  # Obst et al, 2021: https://arxiv.org/pdf/2102.09504
+
+        # Designed for a mono-source setting
         X_s = np.vstack(l_X_s)
         y_s = np.concatenate(l_y_s)
+
         fit_s = _fit_stats(X_s, y_s, lbda_s)
         fit_t = _fit_stats(X_t_train, y_t_train, lbda_t)
+
         alpha_ft = _default_alpha(fit_t[1], factor=10.0)
-        k_grid = np.arange(0, 2001, 10, dtype=np.int64)
-        Xk = X_t_val if (X_t_val is not None and X_t_val.size) else np.vstack([X_s, X_t_train])
-        k_star = _select_k(Xk, fit_s, fit_t, alpha_ft, k_grid, k_min=10)
+        k_grid = np.arange(0, 1001, 50, dtype=np.int64)  # trying to give a fair grid
+
+        # find the best number of gradient step
+        k_star = _select_k(X_t_val, fit_s, fit_t, alpha_ft, k_grid, k_min=1)
         A_k, _, _ = _make_cache(fit_t[1], alpha_ft, k_star)
+
+        # re-fit final theta_t
         theta = _theta_k(fit_s[0], fit_t[0], A_k)
+
         return theta, len(X_t_train), len(X_s)
 
     if mode == "hierarchical":
+
+        # Designed for a mono-source setting
         X_s = np.vstack(l_X_s)
         y_s = np.concatenate(l_y_s)
+
+        # fit a mixture of Gaussian then return the target corresponding theta
         theta = _hierarchical_theta(
             X_t_train=X_t_train,
             y_t_train=y_t_train,
@@ -558,8 +601,8 @@ def regr(
             sigma_s=sigma_s,
             lbda_t=lbda_t,
             lbda_s=lbda_s,
-            lbda_c=lbda_c,
         )
+
         return theta, len(X_t_train), len(X_s)
 
     raise ValueError(f"Unknown mode: {mode}")
@@ -576,130 +619,109 @@ def classif(
     sigma_s: float,
     lbda_t: float,
     lbda_s: float,
-    lbda_c: float,
     alpha: float = 0.05,
     mode: str = "target",
+    chunk_size: int = 5,
+    n_max: int | None = None,
 ) -> Tuple[np.ndarray, int, int]:
-    """Dispatch classification modes and return (w, n_t, n_s)."""
-    _ = (theta_t, X_t_val, sigma_t, sigma_s, alpha)
+    """Dispatch function modes and return (theta, n_t, n_s)."""
 
-    if mode == "target":
-        return _ridge(X_t_train, y_t_train, lbda_t), len(X_t_train), 0
+    kwargs = dict(
+        theta_t=theta_t, X_t_train=X_t_train, y_t_train=y_t_train,
+        X_t_val=X_t_val, l_X_s=l_X_s, l_y_s=l_y_s, sigma_t=sigma_t,
+        sigma_s=sigma_s, lbda_t=lbda_t, lbda_s=lbda_s, alpha=alpha,
+        mode=mode, chunk_size=chunk_size, n_max=n_max,
+    )
 
-    if mode == "source":
-        X_s = np.vstack(l_X_s)
-        y_s = np.concatenate(l_y_s)
-        return _ridge(X_s, y_s, lbda_s), 0, len(X_s)
+    if mode in ['chen_et_al', 'obst_et_al', 'zhang_et_al']:
+        raise ValueError(f"{mode} not designed for classification task.")
 
-    if mode == "full":
-        X_s = np.vstack(l_X_s)
-        y_s = np.concatenate(l_y_s)
-        X_c = np.r_[X_t_train, X_s]
-        y_c = np.r_[y_t_train, y_s]
-        return _ridge(X_c, y_c, lbda_c), len(X_t_train), len(X_s)
-
-    if mode == "hierarchical":
-        X_s = np.vstack(l_X_s)
-        y_s = np.concatenate(l_y_s)
-        w = _hierarchical_theta(
-            X_t_train=X_t_train,
-            y_t_train=y_t_train,
-            X_s=X_s,
-            y_s=y_s,
-            sigma_t=1.0,
-            sigma_s=1.0,
-            lbda_t=lbda_t,
-            lbda_s=lbda_s,
-            lbda_c=lbda_c,
-        )
-        return w, len(X_t_train), len(X_s)
-
-    raise ValueError(f"Unknown mode: {mode}")
+    else:
+        return regr(**kwargs)
 
 
 target_regr = partial(regr, mode="target")
 source_regr = partial(regr, mode="source")
 full_regr = partial(regr, mode="full")
+hier_regr = partial(regr, mode="hierarchical")
+
 dyn_greedy_regr = partial(regr, mode="dynamic-greedy")
 dyn_uniform_regr = partial(regr, mode="dynamic-uniform")
-oracle_dyn_regr = partial(regr, mode="oracle_dynamic")
+oracle_greedy_regr = partial(regr, mode="oracle-greedy")
+oracle_uniform_regr = partial(regr, mode="oracle-uniform")
+
 zhang_regr = partial(regr, mode="zhang_et_al")
 chen_regr = partial(regr, mode="chen_et_al")
 obst_regr = partial(regr, mode="obst_et_al")
-hier_regr = partial(regr, mode="hierarchical")
 
 target_classif = partial(classif, mode="target")
 source_classif = partial(classif, mode="source")
 full_classif = partial(classif, mode="full")
 hier_classif = partial(classif, mode="hierarchical")
 
-target_regr.__doc__ = _REGR_DOC
-source_regr.__doc__ = _REGR_DOC
-full_regr.__doc__ = _REGR_DOC
-dyn_greedy_regr.__doc__ = _REGR_DOC
-dyn_uniform_regr.__doc__ = _REGR_DOC
-oracle_dyn_regr.__doc__ = _REGR_DOC
-zhang_regr.__doc__ = _REGR_DOC
-chen_regr.__doc__ = _REGR_DOC
-obst_regr.__doc__ = _REGR_DOC
-hier_regr.__doc__ = _REGR_DOC
+dyn_greedy_classif = partial(regr, mode="dynamic-greedy")
+dyn_uniform_classif = partial(regr, mode="dynamic-uniform")
+oracle_greedy_classif = partial(regr, mode="oracle-greedy")
+oracle_uniform_classif = partial(regr, mode="oracle-uniform")
 
-_CLASS_DOC = dedent(
-    """
-    Estimate the linear classifier from a combination of target and source.
+target_regr.__doc__ = _DOC
+source_regr.__doc__ = _DOC
+full_regr.__doc__ = _DOC
+hier_regr.__doc__ = _DOC
 
-    Parameters
-    ----------
-    theta_t : ndarray of shape (d,)
-        Ground-truth parameters for the target dataset (oracle mode only).
-    X_t_train, y_t_train : ndarray
-        Training feature matrices and targets for the target dataset.
-    X_t_val : ndarray
-        Validation features for target.
-    l_X_s, l_y_s : list of ndarray of shape (n_t,), (n_s,)
-        Training feature matrices and targets for the source datasets.
-    sigma_t, sigma_s : float
-        Noise standard deviations.
-    lbda_t, lbda_s, lbda_c : float
-        Ridge penalties.
-    alpha : float
-        LCB parameter
+dyn_greedy_regr.__doc__ = _DOC
+dyn_uniform_regr.__doc__ = _DOC
+oracle_greedy_regr.__doc__ = _DOC
+oracle_uniform_regr.__doc__ = _DOC
 
-    Returns
-    -------
-    w : ndarray
-        Estimated linear classifier weights.
-    n_t : int
-        Number of target samples used.
-    n_s : int
-        Number of source samples used.
-    """
-)
+zhang_regr.__doc__ = _DOC
+chen_regr.__doc__ = _DOC
+obst_regr.__doc__ = _DOC
+hier_regr.__doc__ = _DOC
 
-target_classif.__doc__ = _CLASS_DOC
-source_classif.__doc__ = _CLASS_DOC
-full_classif.__doc__ = _CLASS_DOC
-hier_classif.__doc__ = _CLASS_DOC
+target_classif.__doc__ = _DOC
+source_classif.__doc__ = _DOC
+full_classif.__doc__ = _DOC
+hier_classif.__doc__ = _DOC
+
+dyn_greedy_classif.__doc__ = _DOC
+dyn_uniform_classif.__doc__ = _DOC
+oracle_greedy_classif.__doc__ = _DOC
+oracle_uniform_classif.__doc__ = _DOC
 
 __all__ = [
+
+    # Delta related computation functions
     "compute_delta_regr",
     "compute_delta_regr_variance",
     "compute_delta_regr_lower_bound",
+    "compute_delta_classif",
+    "compute_delta_classif_variance",
+    "compute_delta_classif_lower_bound",
+
+    # usefull helper
     "opt_lambda",
-    "regr",
-    "classif",
+
+    # regression approaches
     "target_regr",
     "source_regr",
     "full_regr",
     "dyn_greedy_regr",
     "dyn_uniform_regr",
-    "oracle_dyn_regr",
+    "oracle_greedy_regr",
+    "oracle_uniform_regr",
     "zhang_regr",
     "chen_regr",
     "obst_regr",
     "hier_regr",
+
+    # classification approaches
     "target_classif",
     "source_classif",
     "full_classif",
     "hier_classif",
+    "dyn_greedy_classif",
+    "dyn_uniform_classif",
+    "oracle_greedy_classif",
+    "oracle_uniform_classif",
 ]

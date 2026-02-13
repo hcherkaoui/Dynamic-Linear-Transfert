@@ -1,29 +1,114 @@
 """Experiment utilities helpers module."""
 from __future__ import annotations
-from typing import List, Tuple
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+import os
+import yaml
+from typing import List, Tuple, Any, Mapping
 import numpy as np
 from dyntr.augmenter import SampleAugmenter
-from dyntr.datasets import fetch_synthetic_classification_datasets, fetch_synthetic_datasets
-from dyntr.linear import compute_delta_regr, opt_lambda
+from dyntr.datasets import synth_regr_data
+from dyntr.datasets._datasets import _generate_thetas
+from dyntr.linear import compute_delta_classif, compute_delta_regr, opt_lambda
 from dyntr.utils import check_random_state
 from dyntr.linear import (
-    chen_regr,
-    dyn_greedy_regr,
+    target_regr,
     full_regr,
     hier_regr,
+    dyn_greedy_regr,
+    oracle_greedy_regr,
+    chen_regr,
     obst_regr,
-    oracle_dyn_regr,
-    source_regr,
-    target_regr,
     zhang_regr,
-)
-from dyntr.linear import (
+    target_classif,
     full_classif,
     hier_classif,
-    source_classif,
-    target_classif,
+    dyn_greedy_classif,
+    oracle_greedy_classif,
 )
-from config import get_config
+
+_ROOT = Path(__file__).resolve().parents[1]
+_DEFAULT_CONFIG = _ROOT / "benchmark" / "configs" / "config.yml"
+
+
+@dataclass(frozen=True)
+class Config:
+    FIGURES_DIR: str
+    FONTSIZE: int
+    LW: float
+    ALPHA: float
+    MARKERSIZE: float
+    MODEL_ALPHA: float
+    N_JOBS: int
+    N_RUNS: int
+    JOBLIB_VERBOSE: int
+    SEED: int
+    L_EPS: np.ndarray
+    L_SIGMA_S: np.ndarray
+    N_TRAIN_SAMPLES: int
+    N_T: int
+    N_POINTS: int
+    SIGMA: float
+    D: int
+    EPS: list[float]
+    STANDARDIZE_REAL: bool
+    LBDA_DEFAULT: float
+    CHUNK_SIZE: int
+    START_PLOT: int
+
+
+def _logspace(spec: Any) -> np.ndarray:
+    if isinstance(spec, Mapping):
+        start = float(spec["start"])
+        stop = float(spec["stop"])
+        num = int(spec["num"])
+        return np.logspace(start=start, stop=stop, num=num)
+    return np.asarray(spec, dtype=float)
+
+
+def _load_yaml(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+@lru_cache(maxsize=None)
+def get_config(path: str | None = None) -> Config:
+    config_path = Path(path or os.environ.get("DYNTR_CONFIG", _DEFAULT_CONFIG)).resolve()
+    data = _load_yaml(config_path)
+
+    plotting = data.get("plotting", {})
+    launcher = data.get("launcher", {})
+    data_cfg = data.get("data", {})
+    bench_cfg = data.get("bench", {})
+
+    figures_dir = str(plotting.get("figures_dir", "_figures"))
+    os.makedirs(figures_dir, exist_ok=True)
+
+    return Config(
+        FIGURES_DIR=figures_dir,
+        FONTSIZE=int(plotting.get("fontsize", 18)),
+        LW=float(plotting.get("lw", 5)),
+        ALPHA=float(plotting.get("alpha", 0.4)),
+        MARKERSIZE=float(plotting.get("markersize", 6)),
+        MODEL_ALPHA=float(data.get("model", {}).get("alpha", 0.01)),
+        N_JOBS=int(launcher.get("n_jobs", 1)),
+        N_RUNS=int(launcher.get("n_runs", 1)),
+        JOBLIB_VERBOSE=int(launcher.get("joblib_verbose", 0)),
+        SEED=int(launcher.get("seed", 0)),
+        L_EPS=_logspace(data_cfg.get("l_eps", {"start": -3, "stop": 3, "num": 50})),
+        L_SIGMA_S=_logspace(data_cfg.get("l_sigma_s", {"start": -3, "stop": 3, "num": 50})),
+        N_TRAIN_SAMPLES=int(data_cfg.get("n_s", 1000)),
+        N_T=int(data_cfg.get("n_t", 1000)),
+        N_POINTS=int(data_cfg.get("n_points", 20)),
+        SIGMA=float(data_cfg.get("sigma", 1.0)),
+        D=int(data_cfg.get("d", 50)),
+        EPS=list(data_cfg.get("eps", [0.5])),
+        STANDARDIZE_REAL=bool(data_cfg.get("standardize_real", True)),
+        LBDA_DEFAULT=float(data_cfg.get("lbda_default", 1.0)),
+        CHUNK_SIZE=int(bench_cfg.get("chunk_size", 10)),
+        START_PLOT=int(bench_cfg.get("start_plot", 2)),
+    )
 
 
 _CFG = get_config()
@@ -31,6 +116,30 @@ SIGMA = _CFG.SIGMA
 N_TRAIN_SAMPLES = _CFG.N_TRAIN_SAMPLES
 N_T = _CFG.N_T
 N_POINTS = _CFG.N_POINTS
+
+_COLORS = {
+    "target": "#4E79A7",
+    "source": "#59A14F",
+    "mixed": "#B07AA1",
+    "proposed": "#F28E2B",
+    "oracle": "#E15759",
+    "zhang": "#76B7B2",
+    "chen": "#9C755F",
+    "obst": "#EDC948",
+    "hier": "#BAB0AC",
+}
+
+_MARKERS = {
+    "target": "o",
+    "source": "o",
+    "mixed": "o",
+    "proposed": "X",
+    "oracle": "X",
+    "zhang": "s",
+    "chen": "s",
+    "obst": "s",
+    "hier": "^",
+}
 
 
 def _ridge(X, y, lbda):
@@ -41,6 +150,13 @@ def _concat_sources(l_X_s, l_y_s):
     X_s = np.vstack(l_X_s)
     y_s = np.concatenate(l_y_s)
     return X_s, y_s
+
+
+def _regen_thetas(theta_t, theta_s, rng):
+    eps = float(np.linalg.norm(theta_s - theta_t))
+    d = int(theta_t.shape[0])
+    theta_s_new, theta_t_new = _generate_thetas(d, eps, random_state=rng)
+    return theta_t_new, theta_s_new
 
 
 def run_one_delta_illus(
@@ -126,8 +242,10 @@ def run_one_delta_illus(
     l_X_s = [np.array(X_s, copy=True, order="C") for X_s in l_X_s]
 
     if synthetic_data:
-        # For synthetic data, we can regenerate the targets with noise to have more variability across runs.
+        theta_t, theta_s = _regen_thetas(theta_t, theta_s, rng)
         y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
+        y_t_val = X_t_val @ theta_t + rng.normal(0.0, sigma_t, size=X_t_val.shape[0])
+        y_t_test = X_t_test @ theta_t + rng.normal(0.0, sigma_t, size=X_t_test.shape[0])
         l_y_s = [X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0]) for X_s in l_X_s]
     else:
         # For real data, we just shuffle the samples to have variability across runs.
@@ -156,6 +274,12 @@ def run_one_delta_illus(
     theta_t_hat = A_t_inv @ b_t
 
     l_Delta_hat, l_Delta_emp = [], []
+    y_t_unique = np.unique(y_t_train)
+
+    is_binary = np.all(np.isin(y_t_unique, [-1.0, 1.0])) or np.all(np.isin(y_t_unique, [0.0, 1.0]))
+    y_t_val_classif = y_t_val
+    if is_binary and np.all(np.isin(y_t_unique, [0.0, 1.0])):
+        y_t_val_classif = np.where(y_t_val > 0.0, 1.0, -1.0)
 
     for i in nn_samples_target:
         Xi_s = X_s[:i]
@@ -170,20 +294,28 @@ def run_one_delta_illus(
         A_c_inv = np.linalg.inv(G_s + G_t + (lbda_s + lbda_t) * eye)
         theta_c_hat = A_c_inv @ (b_s + b_t)
 
-        Delta_hat = compute_delta_regr(
-            theta_s=theta_s_hat,
-            theta_t=theta_t_hat,
-            G_s=G_s,
-            G_t=G_t,
-            A_t_inv=A_t_inv,
-            A_s_inv=A_s_inv,
-            A_c_inv=A_c_inv,
-            X_val=X_t_val,
-            sigma_s=sigma_s,
-            sigma_t=sigma_t,
-            lbda_t=lbda_t,
-            lbda_s=lbda_s,
-        )
+        if is_binary:
+            Delta_hat = compute_delta_classif(
+                theta_t=theta_t_hat,
+                theta_c=theta_c_hat,
+                X_val=X_t_val,
+                y_val=y_t_val_classif,
+            )
+        else:
+            Delta_hat = compute_delta_regr(
+                theta_s=theta_s_hat,
+                theta_t=theta_t_hat,
+                G_s=G_s,
+                G_t=G_t,
+                A_t_inv=A_t_inv,
+                A_s_inv=A_s_inv,
+                A_c_inv=A_c_inv,
+                X_val=X_t_val,
+                sigma_s=sigma_s,
+                sigma_t=sigma_t,
+                lbda_t=lbda_t,
+                lbda_s=lbda_s,
+            )
 
         # Empirical: test-feature risk vs theta (not using y_test noise)
         Delta_emp = float(np.linalg.norm(X_t_test @ (theta_t_hat - theta_t)) ** 2 - np.linalg.norm(X_t_test @ (theta_c_hat - theta_t)) ** 2)
@@ -192,14 +324,22 @@ def run_one_delta_illus(
         l_Delta_emp.append(Delta_emp)
 
     return [
-        (r"$\hat{\Delta}$", "tab:orange", "solid", nn_samples_target, np.asarray(l_Delta_hat)),
-        (
-            r"$\Delta^{\mathrm{emp}}$",
-            "tab:blue",
-            "solid",
-            nn_samples_target,
-            np.asarray(l_Delta_emp),
-        ),
+        {
+            "name": r"$\hat{\Delta}$",
+            "color": _COLORS["proposed"],
+            "style": "solid",
+            "marker": "o",
+            "n_samples": nn_samples_target,
+            "metric": np.asarray(l_Delta_hat),
+        },
+        {
+            "name": r"$\Delta^{\mathrm{emp}}$",
+            "color": _COLORS["target"],
+            "style": "solid",
+            "marker": "o",
+            "n_samples": nn_samples_target,
+            "metric": np.asarray(l_Delta_emp),
+        },
     ]
 
 
@@ -294,8 +434,10 @@ def run_one_regr_perf_cmp(
     l_X_s = [np.array(X_s, copy=True, order="C") for X_s in l_X_s]
 
     if synthetic_data:
-        # For synthetic data, we can regenerate the targets with noise to have more variability across runs.
+        theta_t, theta_s = _regen_thetas(theta_t, theta_s, rng)
         y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
+        y_t_val = X_t_val @ theta_t + rng.normal(0.0, sigma_t, size=X_t_val.shape[0])
+        y_t_test = X_t_test @ theta_t + rng.normal(0.0, sigma_t, size=X_t_test.shape[0])
         l_y_s = [X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0]) for X_s in l_X_s]
     else:
         # For real data, we just shuffle the samples to have variability across runs.
@@ -321,15 +463,14 @@ def run_one_regr_perf_cmp(
         return np.linalg.norm(X_t_test @ (theta - theta_t)) ** 2 / len(X_t_test)
 
     methods = [
-        ("Target-only ridge", "tab:blue", "dotted", target_regr),
-        ("Source-only ridge", "tab:blue", "dashed", source_regr),
-        ("Mixed-task ridge", "tab:blue", "solid", full_regr),
-        ("Proposed (greedy)", "tab:orange", "solid", dyn_greedy_regr),
-        ("Proposed (oracle)", "tab:red", "solid", oracle_dyn_regr),
-        ("Zhang et al, 2025", "tab:purple", "solid", zhang_regr),
-        ("Chen et al, 2014", "tab:gray", "solid", chen_regr),
-        ("Obst et al, 2021", "tab:green", "solid", obst_regr),
-        ("Hierarchical regression", "tab:brown", "solid", hier_regr),
+        ("Target-only", _COLORS["target"], "solid", _MARKERS["target"], target_regr),
+        ("Mixed", _COLORS["mixed"], "solid", _MARKERS["mixed"], full_regr),
+        ("Hierarchical", _COLORS["hier"], "solid", _MARKERS["hier"], hier_regr),
+        ("Proposed", _COLORS["proposed"], "solid", _MARKERS["proposed"], dyn_greedy_regr),
+        ("Proposed (oracle)", _COLORS["oracle"], "solid", _MARKERS["oracle"], oracle_greedy_regr),
+        ("Zhang et al, 2025", _COLORS["zhang"], "dotted", _MARKERS["zhang"], zhang_regr),
+        ("Chen et al, 2014", _COLORS["chen"], "dotted", _MARKERS["chen"], chen_regr),
+        ("Obst et al, 2021", _COLORS["obst"], "dotted", _MARKERS["obst"], obst_regr),
     ]
     series = {name: {"err": [], "mse": [], "n_s": []} for name, *_ in methods}
 
@@ -340,7 +481,6 @@ def run_one_regr_perf_cmp(
         l_y_s=l_y_s,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_s + lbda_t,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
@@ -351,7 +491,7 @@ def run_one_regr_perf_cmp(
         kwargs["X_t_train"] = X_t_train[:n_t]
         kwargs["y_t_train"] = y_t_train[:n_t]
 
-        for name, _, _, fn in methods:
+        for name, _, _, _, fn in methods:
             theta, _, n_s = fn(**kwargs)
             series[name]["err"].append(_err(theta))
             series[name]["mse"].append(_mse(theta))
@@ -359,20 +499,21 @@ def run_one_regr_perf_cmp(
 
     def _pack(metric_key):
         return [
-            (
-                name,
-                color,
-                style,
-                np.array(nn_samples_target + 1),
-                np.array(series[name][metric_key]),
-            )
-            for name, color, style, _ in methods
+            {
+                "name": name,
+                "color": color,
+                "style": style,
+                "marker": marker,
+                "n_samples": np.array(nn_samples_target + 1),
+                "metric": np.array(series[name][metric_key]),
+            }
+            for name, color, style, marker, _ in methods
         ]
 
     return {
-        "error:": _pack("err"),
-        "mse:": _pack("mse"),
-        "n_s:": _pack("n_s"),
+        "error": _pack("err"),
+        "mse": _pack("mse"),
+        "n_s": _pack("n_s"),
     }
 
 
@@ -393,6 +534,7 @@ def run_one_classif_perf_cmp(
     lbda_s: float,
     alpha: float = 0.1,
     min_n_samples_target: int = 100,
+    chunk_size: int = 5,
     seed: int | None = None,
     synthetic_data: bool = True,
 ) -> List[Tuple[str, str, str, np.ndarray]]:
@@ -428,25 +570,18 @@ def run_one_classif_perf_cmp(
     l_X_s = [np.array(X_s, copy=True, order="C") for X_s in l_X_s]
 
     if synthetic_data:
-        class_data = fetch_synthetic_classification_datasets(
-            n_t_train=X_t_train.shape[0],
-            n_t_val=X_t_val.shape[0],
-            n_t_test=X_t_test.shape[0],
-            n_s_train=l_X_s[0].shape[0],
-            n_s_val=1,
-            n_s_test=1,
-            d=X_t_train.shape[1],
-            eps=0.0,
-            sigma_t=sigma_t,
-            sigma_s=sigma_s,
-            theta_t_and_theta_s=(theta_t, theta_s),
-            n_sources=len(l_X_s),
-            random_state=seed,
-        )
-        _, y_t_train = class_data["target_train"]
-        _, y_t_val = class_data["target_val"]
-        _, y_t_test = class_data["target_test"]
-        _, l_y_s = class_data["source_train"]
+        theta_t, theta_s = _regen_thetas(theta_t, theta_s, rng)
+
+        def _binarize(z):
+            return np.where(z >= 0.0, 1.0, -1.0)
+
+        y_t_train = _binarize(X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0]))
+        y_t_val = _binarize(X_t_val @ theta_t + rng.normal(0.0, sigma_t, size=X_t_val.shape[0]))
+        y_t_test = _binarize(X_t_test @ theta_t + rng.normal(0.0, sigma_t, size=X_t_test.shape[0]))
+        l_y_s = [
+            _binarize(X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0]))
+            for X_s in l_X_s
+        ]
     else:
         idx_t = rng.permutation(X_t_train.shape[0])
         X_t_train = X_t_train[idx_t]
@@ -462,17 +597,24 @@ def run_one_classif_perf_cmp(
 
     lbda_t = opt_lambda(X_t_train, y_t_train, X_t_val, y_t_val)
 
-    def _acc(pred):
-        return np.mean(pred == y_t_test)
+    def _soft_loss(theta):
+        z = -y_t_test * (X_t_test @ theta)
+        out = np.empty_like(z, dtype=float)
+        pos = z >= 0.0
+        out[pos] = 1.0 / (1.0 + np.exp(-z[pos]))
+        ez = np.exp(z[~pos])
+        out[~pos] = ez / (1.0 + ez)
+        return float(np.mean(out))
 
-    def _predict(theta):
-        return np.where(X_t_test @ theta >= 0.0, 1.0, -1.0)
+    def _soft_acc(theta):
+        return 1.0 - _soft_loss(theta)
 
     methods = [
-        ("Target-only ridge", "tab:blue", "dotted", target_classif),
-        ("Source-only ridge", "tab:blue", "dashed", source_classif),
-        ("Mixed-task ridge", "tab:blue", "solid", full_classif),
-        ("Hierarchical classification", "tab:brown", "solid", hier_classif),
+        ("Target-only", _COLORS["target"], "solid", _MARKERS["target"], target_classif),
+        ("Mixed", _COLORS["mixed"], "solid", _MARKERS["mixed"], full_classif),
+        ("Hierarchical", _COLORS["hier"], "solid", _MARKERS["hier"], hier_classif),
+        ("Proposed", _COLORS["proposed"], "solid", _MARKERS["proposed"], dyn_greedy_classif),
+        ("Proposed (oracle)", _COLORS["oracle"], "solid", _MARKERS["oracle"], oracle_greedy_classif),
     ]
     series = {name: {"acc": [], "n_s": []} for name, *_ in methods}
 
@@ -483,36 +625,37 @@ def run_one_classif_perf_cmp(
         l_y_s=l_y_s,
         lbda_t=lbda_t,
         lbda_s=lbda_s,
-        lbda_c=lbda_s + lbda_t,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
         alpha=alpha,
+        chunk_size=chunk_size,
     )
 
     for n_t in nn_samples_target:
         kwargs["X_t_train"] = X_t_train[:n_t]
         kwargs["y_t_train"] = y_t_train[:n_t]
 
-        for name, _, _, fn in methods:
+        for name, _, _, _, fn in methods:
             theta, _, n_s = fn(**kwargs)
-            series[name]["acc"].append(_acc(_predict(theta)))
+            series[name]["acc"].append(_soft_acc(theta))
             series[name]["n_s"].append(n_s)
 
     def _pack(metric_key):
         return [
-            (
-                name,
-                color,
-                style,
-                np.array(nn_samples_target + 1),
-                np.array(series[name][metric_key]),
-            )
-            for name, color, style, _ in methods
+            {
+                "name": name,
+                "color": color,
+                "style": style,
+                "marker": marker,
+                "n_samples": np.array(nn_samples_target + 1),
+                "metric": np.array(series[name][metric_key]),
+            }
+            for name, color, style, marker, _ in methods
         ]
 
     return {
-        "acc:": _pack("acc"),
-        "n_s:": _pack("n_s"),
+        "acc": _pack("acc"),
+        "n_s": _pack("n_s"),
     }
 
 
@@ -547,11 +690,10 @@ def run_one_eps_infl(
 
     for eps in l_eps:
         # generate new samples in this setting
-        theta_t = np.array([1.0] + [0.0] * (d - 1))
-        theta_s = np.array([1.0] + [eps] + [0.0] * (d - 2))
+        theta_s, theta_t = _generate_thetas(d, eps, random_state=None)
         theta_t_and_theta_s = (theta_t, theta_s)
 
-        data = fetch_synthetic_datasets(
+        data = synth_regr_data(
             n_t_train=N_TRAIN_SAMPLES,
             n_s_train=N_TRAIN_SAMPLES,
             d=d,
@@ -577,11 +719,27 @@ def run_one_eps_infl(
 
         l_n.append(augmenter.get_n_selected())
 
-        error_diff.append(np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test) - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test))
+        err_t = np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)
+        err_c = np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)
+        error_diff.append(err_t - err_c)
 
     return [
-        (r"$\Delta^{\mathrm{emp}}$", "tab:orange", "solid", np.array(l_eps), np.array(error_diff)),
-        (r"$n^\star$", "tab:gray", "dashed", np.array(l_eps), np.array(l_n)),
+        {
+            "name": r"$\Delta^{\mathrm{emp}}$",
+            "color": _COLORS["proposed"],
+            "style": "solid",
+            "marker": "o",
+            "n_samples": np.array(l_eps),
+            "metric": np.array(error_diff),
+        },
+        {
+            "name": r"$n^\star$",
+            "color": _COLORS["hier"],
+            "style": "dashed",
+            "marker": "o",
+            "n_samples": np.array(l_eps),
+            "metric": np.array(l_n),
+        },
     ]
 
 
@@ -612,14 +770,13 @@ def run_one_sigma_infl(
     list of tuples
         ``[(name, color, linestyle, values), ...]``
     """
-    theta_t = np.array([1.0] + [0.0] * (d - 1))
-    theta_s = np.array([1.0] + [eps] + [0.0] * (d - 2))
+    theta_s, theta_t = _generate_thetas(d, eps, random_state=None)
     theta_t_and_theta_s = (theta_t, theta_s)
 
     l_n, error_diff = [], []
 
     for sigma_s in l_sigma_s:
-        data = fetch_synthetic_datasets(
+        data = synth_regr_data(
             n_t_train=N_TRAIN_SAMPLES,
             n_s_train=N_TRAIN_SAMPLES,
             d=d,
@@ -645,11 +802,27 @@ def run_one_sigma_infl(
 
         l_n.append(augmenter.get_n_selected())
 
-        error_diff.append(np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test) - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test))
+        err_t = np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)
+        err_c = np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)
+        error_diff.append(err_t - err_c)
 
     return [
-        (r"$\Delta^{\mathrm{emp}}$", "tab:orange", "solid", np.array(l_sigma_s), np.array(error_diff)),
-        (r"$n^\star$", "tab:gray", "dashed", np.array(l_sigma_s), np.array(l_n)),
+        {
+            "name": r"$\Delta^{\mathrm{emp}}$",
+            "color": _COLORS["proposed"],
+            "style": "solid",
+            "marker": "o",
+            "n_samples": np.array(l_sigma_s),
+            "metric": np.array(error_diff),
+        },
+        {
+            "name": r"$n^\star$",
+            "color": _COLORS["hier"],
+            "style": "dashed",
+            "marker": "o",
+            "n_samples": np.array(l_sigma_s),
+            "metric": np.array(l_n),
+        },
     ]
 
 
@@ -697,8 +870,10 @@ def run_one_lbda_infl(
     l_X_s = [np.array(X_s, copy=True, order="C") for X_s in l_X_s]
 
     if synthetic_data:
-        # For synthetic data, we can regenerate the targets with noise to have more variability across runs.
+        theta_t, theta_s = _regen_thetas(theta_t, theta_s, rng)
         y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
+        y_t_val = X_t_val @ theta_t + rng.normal(0.0, sigma_t, size=X_t_val.shape[0])
+        y_t_test = X_t_test @ theta_t + rng.normal(0.0, sigma_t, size=X_t_test.shape[0])
         l_y_s = [
             X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0])
             for X_s in l_X_s
@@ -722,7 +897,7 @@ def run_one_lbda_infl(
     X_s, y_s = _concat_sources(l_X_s, l_y_s)
 
     lbda_t = opt_lambda(X_t_train, y_t_train, X_t_val, y_t_val)
-    l_lbda_c = np.logspace(np.log(lbda_t / 20.0), np.log(lbda_t * 20.0), 50)
+    l_lbda_c = np.logspace(np.log(lbda_t / 20.0), np.log(lbda_t * 20.0), N_POINTS)
 
     l_n, error_diff = [], []
 
@@ -734,9 +909,25 @@ def run_one_lbda_infl(
 
         l_n.append(augmenter.get_n_selected())
 
-        error_diff.append(np.linalg.norm(X_t_test @ (_ridge(X_t_train, y_t_train, lbda_t) - theta_t)) ** 2 / len(X_t_test) - np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test))
+        err_t = np.linalg.norm(X_t_test @ (_ridge(X_t_train, y_t_train, lbda_t) - theta_t)) ** 2 / len(X_t_test)
+        err_c = np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)
+        error_diff.append(err_t - err_c)
 
     return [
-        (r"$\Delta^{\mathrm{emp}}$", "tab:orange", "solid", np.array(l_lbda_c), np.array(error_diff)),
-        (r"$n^\star$", "tab:gray", "dashed", np.array(l_lbda_c), np.array(l_n)),
+        {
+            "name": r"$\Delta^{\mathrm{emp}}$",
+            "color": _COLORS["proposed"],
+            "style": "solid",
+            "marker": "o",
+            "n_samples": np.array(l_lbda_c),
+            "metric": np.array(error_diff),
+        },
+        {
+            "name": r"$n^\star$",
+            "color": _COLORS["hier"],
+            "style": "dashed",
+            "marker": "o",
+            "n_samples": np.array(l_lbda_c),
+            "metric": np.array(l_n),
+        },
     ]
