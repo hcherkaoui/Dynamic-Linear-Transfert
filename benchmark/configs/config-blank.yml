@@ -1,30 +1,41 @@
 plotting:
-  figures_dir: "_figures"
-  fontsize: 18
-  lw: 4
-  alpha: 0.6
+  figures_dir: "_figures"             # Output directory for plots
+  fontsize: 18                        # Base font size for plots
+  lw: 3.5                             # Line width for curves
+  alpha: 0.6                          # Alpha for uncertainty bands
+  markersize: 10                      # Marker size for points
 
 launcher:
-  n_jobs: 1
-  n_runs: 1
-  seed: 4578902
+  n_jobs: 1                           # Number of parallel jobs
+  n_runs: 1                           # Number of Monte Carlo runs
+  joblib_verbose: 10                  # Joblib verbosity level
+  seed: 4578902                       # Global RNG seed
+  l_datasets: [email]                 # Real datasets to benchmark
+  l_eps_classif_mono: [1]             # Classif mono-source eps values
+  l_eps_classif_multi: [1]            # Classif multi-sources eps values
+  l_eps_regr_mono: [0.5]              # Regr mono-source eps values
+  l_eps_regr_multi: [1]               # Regr multi-sources eps values
 
 model:
-  alpha: 0.01
+  alpha: 0.001                        # LCB parameter
+
+bench:
+  chunk_size: 10                      # Chunk size for dynamic augmentation
+  start_plot: 1                       # Plot starting index for stability
 
 data:
   l_eps:
-    start: -2
-    stop: 2
-    num: 5
+    start: -3                         # log10(eps) start
+    stop: 3                           # log10(eps) stop
+    num: 5                            # Number of points
   l_sigma_s:
-    start: -2
-    stop: 2
-    num: 5
-  n_train_samples: 200
-  n_t: 50
-  n_points: 10
-  sigma: 1.0
-  d: 10
-  eps_list: "0.5"
-  lbda_default: 1.0
+    start: -3                         # log10(sigma_s) start
+    stop: 3                           # log10(sigma_s) stop
+    num: 5                            # Number of points
+  n_t: 50                             # Target train size
+  n_s: 200                            # Source size per dataset
+  n_points: 10                        # Number of sample sizes in curves
+  sigma: 1.0                          # Noise level
+  d: 10                               # Feature dimension
+  standardize_real: true              # Standardize features for real datasets
+  lbda_default: 1.0                   # Default ridge regularization

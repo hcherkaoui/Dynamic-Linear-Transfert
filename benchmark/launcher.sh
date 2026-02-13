@@ -24,6 +24,14 @@ info() { echo -e "${BLUE}${BOLD}[$(ts)] [INFO]${RESET} $*"; }
 warn() { echo -e "${YELLOW}${BOLD}[$(ts)] [WARN]${RESET} $*"; }
 die()  { echo -e "${RED}${BOLD}[$(ts)] [ERR ]${RESET} $*" >&2; exit 1; }
 
+fmt_dur() {
+  local total="$1"
+  local h=$((total / 3600))
+  local m=$(((total % 3600) / 60))
+  local s=$((total % 60))
+  printf "%02dh %02dm %02ds" "$h" "$m" "$s"
+}
+
 run() {
   local title="$1"; shift
   info "${BOLD}${title}${RESET}"
@@ -59,6 +67,9 @@ done
 
 [[ -n "$mode" ]] || { usage; exit 1; }
 
+# Track total runtime
+t_start="$(date +%s)"
+
 # --- Guards ------------------------------------------------------------------
 if [[ -z "${WORK:-}" ]]; then
   WORK="$HOME"
@@ -90,14 +101,13 @@ info "PWD            = $(pwd)"
 info "VENV           = ${VENV_ACTIVATE:-N/A}"
 info "SKLEARN_DATA   = $SKLEARN_DATA"
 info "DYNTR_CONFIG   = $DYNTR_CONFIG"
+info "(The benchmark configuration file is determined with the env variable 'DYNTR_CONFIG', by default it is 'configs/config.yml')"
 
 PYTHON_BIN="$(command -v python3.11 || command -v python3 || command -v python || true)"
 [[ -n "$PYTHON_BIN" ]] || die "No python executable found (tried python3.11, python3, python)."
 info "PYTHON_BIN     = $PYTHON_BIN"
 
-echo
-
-# --- Parameters --------------------------------------------------------------
+# --- Parameters ---------------------------------------------------------------
 yaml_val() {
   local key="$1"
   "$PYTHON_BIN" - <<PY
@@ -109,69 +119,82 @@ for part in "${key}".split("."):
     cur = cur.get(part, None) if isinstance(cur, dict) else None
     if cur is None:
         break
-print(cur if cur is not None else "")
+if isinstance(cur, list):
+    print(" ".join(str(x) for x in cur))
+elif cur is None:
+    print("")
+else:
+    print(cur)
 PY
 }
 
-read -r -a eps_list <<<"$(yaml_val data.eps_list)"
-alpha="$(yaml_val model.alpha)"
-n_t="$(yaml_val data.n_t)"
-n_s="$(yaml_val data.n_train_samples)"
-joblib_verbose=10
-datasets=(email boston)
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-data_dir="${script_dir}/../dyntr/datasets/data"
-email_path="${data_dir}/email/Hillstrom.csv"
+read -r -a l_datasets <<<"$(yaml_val launcher.l_datasets)"
+read -r -a l_eps_classif_mono <<<"$(yaml_val launcher.l_eps_classif_mono)"
+read -r -a l_eps_classif_multi <<<"$(yaml_val launcher.l_eps_classif_multi)"
+read -r -a l_eps_regr_mono <<<"$(yaml_val launcher.l_eps_regr_mono)"
+read -r -a l_eps_regr_multi <<<"$(yaml_val launcher.l_eps_regr_multi)"
 
-info "Parameters: eps_list=(${eps_list[*]}), alpha=${alpha}, n_t=${n_t}, n_s=${n_s}, joblib_verbose=${joblib_verbose}"
-info "Datasets:   (${datasets[*]})"
+info "Parameters:"
+info "  datasets         = ${l_datasets[*]}"
+info "  classif mono eps = ${l_eps_classif_mono[*]}"
+info "  classif multi eps= ${l_eps_classif_multi[*]}"
+info "  regr mono eps    = ${l_eps_regr_mono[*]}"
+info "  regr multi eps   = ${l_eps_regr_multi[*]}"
 echo
 
-# --- Benchmark runs -----------------------------------------------------------
-  for eps in "${eps_list[@]}"; do
-    run "bench_01 (synthetic / mono-source) eps=${eps}" \
-      "$PYTHON_BIN" bench_01_delta_regr_illus_synth.py \
-        --eps "$eps" -n_t "$n_t" -n_s "$n_s" --joblib-verbose "$joblib_verbose"
+# --- Classification benchmark runs --------------------------------------------
+for eps in "${l_eps_classif_mono[@]}"; do
+  run "bench_11 (synthetic / mono-source / classif) eps=${eps}" \
+    "$PYTHON_BIN" bench_11_delta_classif_illus_synth.py \
+      --eps "$eps"
 
-    run "bench_02 (synthetic / mono-source) eps=${eps}" \
-      "$PYTHON_BIN" bench_02_sigma_infl_synth.py \
-        --eps "$eps" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-    run "bench_04 (synthetic / mono-source / regr) eps=${eps}" \
-      "$PYTHON_BIN" bench_04_perf_regr_synth.py \
-        --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-    run "bench_09 (synthetic / mono-source / classif) eps=${eps}" \
-      "$PYTHON_BIN" bench_09_perf_classif_synth.py \
-        --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-  done
-
-  run "bench_03 (synthetic / mono-source) epsilon influence" \
-    "$PYTHON_BIN" bench_03_eps_infl_synth.py \
-      --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-  run "bench_06 (synthetic / mono-source) lambda_S influence" \
-    "$PYTHON_BIN" bench_06_lbda_infl_synth.py \
-      --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-  run "bench_07 (synthetic / mono-source) intro illustration" \
-    "$PYTHON_BIN" bench_07_intro_regr_illus.py \
-      --eps 0.5 -n_t 1500 -n_s 4000 --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-  for ds in "${datasets[@]}"; do
-    run "bench_05 (real / mono-source) dataset=${ds}" \
-      "$PYTHON_BIN" bench_05_perf_regr_real.py \
-        --dataset-name "$ds" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-  done
-
-for eps in "${eps_list[@]}"; do
-  run "bench_08 (synthetic / multi-sources / regr) eps=${eps}" \
-    "$PYTHON_BIN" bench_08_perf_regr_multi_synth.py \
-      --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
-
-  run "bench_10 (synthetic / multi-sources / classif) eps=${eps}" \
-    "$PYTHON_BIN" bench_10_perf_multi_classif_synth.py \
-      --eps "$eps" -n_t "$n_t" -n_s "$n_s" --alpha "$alpha" --joblib-verbose "$joblib_verbose"
+  run "bench_09 (synthetic / mono-source / classif) eps=${eps}" \
+    "$PYTHON_BIN" bench_09_perf_classif_synth.py \
+      --eps "$eps"
 done
 
-info "${GREEN}${BOLD}All benchmarks completed.${RESET}"
+for eps in "${l_eps_classif_multi[@]}"; do
+  run "bench_10 (synthetic / multi-sources / classif)" \
+    "$PYTHON_BIN" bench_10_perf_classif_multi_synth.py \
+    --eps "$eps"
+done
+
+# --- Regression benchmark runs ------------------------------------------------
+for eps in "${l_eps_regr_mono[@]}"; do
+  run "bench_01 (synthetic / mono-source / regr) eps=${eps}" \
+    "$PYTHON_BIN" bench_01_delta_regr_illus_synth.py \
+      --eps "$eps"
+
+  run "bench_02 (synthetic / mono-source / regr) eps=${eps}" \
+    "$PYTHON_BIN" bench_02_sigma_infl_synth.py \
+      --eps "$eps"
+
+  run "bench_04 (synthetic / mono-source / regr) eps=${eps}" \
+    "$PYTHON_BIN" bench_04_perf_regr_synth.py \
+      --eps "$eps"
+done
+
+for eps in "${l_eps_regr_multi[@]}"; do
+  run "bench_08 (synthetic / multi-sources / regr)" \
+    "$PYTHON_BIN" bench_08_perf_regr_multi_synth.py \
+    --eps "$eps"
+done
+
+# --- Additiional regression benchmark runs ------------------------------------
+run "bench_03 (synthetic / mono-source / regr) epsilon influence" \
+  "$PYTHON_BIN" bench_03_eps_infl_synth.py
+
+run "bench_06 (synthetic / mono-source / regr) lambda_S influence" \
+  "$PYTHON_BIN" bench_06_lbda_infl_synth.py
+
+run "bench_07 (synthetic / mono-source / regr) intro illustration" \
+  "$PYTHON_BIN" bench_07_intro_regr_illus.py
+
+for ds in "${l_datasets[@]}"; do
+  run "bench_05 (real / mono-source / regr) dataset=${ds}" \
+    "$PYTHON_BIN" bench_05_perf_regr_real.py \
+      --dataset-name "$ds"
+done
+
+total=$(( $(date +%s) - t_start ))
+info "${GREEN}${BOLD}All benchmarks completed in $(fmt_dur "$total").${RESET}"
