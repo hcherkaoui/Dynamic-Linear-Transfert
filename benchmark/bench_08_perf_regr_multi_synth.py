@@ -1,12 +1,11 @@
 """Collaboration criteria illustration."""
 from __future__ import annotations
-import argparse
 import time
+import argparse
 from joblib import Parallel, delayed
-from dyntr.datasets import fetch_synthetic_datasets
+from dyntr.datasets import synth_regr_data
 from dyntr.utils import format_duration, set_random_state
-from config import get_config
-from experiments import run_one_regr_perf_cmp
+from experiments import run_one_regr_perf_cmp, get_config
 from plotting import plot_stats_evol
 
 
@@ -16,14 +15,18 @@ N_RUNS = _CFG.N_RUNS
 FONTSIZE = _CFG.FONTSIZE
 LW = _CFG.LW
 ALPHA = _CFG.ALPHA
+MARKERSIZE = _CFG.MARKERSIZE
+LCB_ALPHA = _CFG.MODEL_ALPHA
 FIGURES_DIR = _CFG.FIGURES_DIR
 SEED = _CFG.SEED
 LBDA_DEFAULT = _CFG.LBDA_DEFAULT
 D = _CFG.D
 SIGMA = _CFG.SIGMA
-
-CHUNK_SIZE = 10
-START_PLOT = 2
+N_T = _CFG.N_T
+N_S = _CFG.N_TRAIN_SAMPLES
+JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
+CHUNK_SIZE = _CFG.CHUNK_SIZE
+START_PLOT = _CFG.START_PLOT
 
 t0 = time.time()
 
@@ -33,34 +36,40 @@ t0 = time.time()
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--eps", type=float, required=True, help="L2-norm approximation error.")
-    parser.add_argument("-n_t", type=int, default=500, help="Number of samples to keep from dataset target.")
-    parser.add_argument("-n_s", type=int, default=1000, help="Number of samples to keep from dataset source.")
-    parser.add_argument("--alpha", type=float, required=True, help="LCB parameter.")
-    parser.add_argument("--joblib-verbose", type=int, default=0, help="Verbosity for joblib (0  =  silent).")
     args = parser.parse_args()
 
     set_random_state(seed=SEED)
 
+    l_eps = [args.eps, args.eps / 2.0, args.eps / 3.0]
+    per_line = 2
+
+    str_norm = r"\,\cdot\,\|\theta_T^{\star}\|_2"
+    parts = [(rf"$\varepsilon_{{{i}}} = 0$" if abs(eps) < 1e-12 else rf"$\varepsilon_{{{i}}} = {eps:.1f}\,{str_norm}$")
+             for i, eps in enumerate(l_eps, start=1)
+             ]
+    lines = []
+    for j in range(0, len(parts), per_line):
+        chunk = parts[j:j + per_line]
+        lines.append(" , ".join(chunk) + (" , " if j + per_line < len(parts) else ""))
+    title = "\n".join(lines) + " ."
+
 ###############################################################################
 # Data
-    sigma_t = SIGMA
-    sigma_s = SIGMA
-    kwargs = dict(n_t_train=args.n_t,
-                  n_t_val=args.n_t,
-                  n_t_test=args.n_t,
-                  n_s_train=args.n_s,
-                  n_s_val=args.n_s,
-                  n_s_test=args.n_s,
+    kwargs = dict(n_t_train=N_T,
+                  n_t_val=max(1, N_T // 50),
+                  n_t_test=max(1, N_T // 50),
+                  n_s_train=max(1, N_S // len(l_eps)),
+                  n_s_val=max(1, N_S // (50 * len(l_eps))),
+                  n_s_test=max(1, N_S // (50 * len(l_eps))),
                   d=D,
-                  sigma_t=sigma_t,
-                  sigma_s=sigma_s,
+                  sigma_t=SIGMA,
+                  sigma_s=SIGMA,
                   )
 
     l_X_s, l_y_s = [], []
-    for r_eps in [0.8, 1.0, 1.2]:
-
-        kwargs['eps'] = r_eps * args.eps
-        dataset = fetch_synthetic_datasets(**kwargs)
+    for eps in l_eps:
+        kwargs['eps'] = eps
+        dataset = synth_regr_data(**kwargs)
         l_X_s.append(dataset["source_train"][0][0])
         l_y_s.append(dataset["source_train"][1][0])
 
@@ -77,7 +86,7 @@ if __name__ == "__main__":
     delayed_runs = []
     for r in range(N_RUNS):
         kwargs = dict(
-            n_samples_target=args.n_t,
+            n_samples_target=N_T,
             theta_t=theta_t,
             theta_s=theta_s,
             X_t_train=X_t_train,
@@ -88,33 +97,35 @@ if __name__ == "__main__":
             y_t_test=y_t_test,
             l_X_s=l_X_s,
             l_y_s=l_y_s,
-            sigma_t=sigma_t,
-            sigma_s=sigma_s,
+            sigma_t=SIGMA,
+            sigma_s=SIGMA,
             lbda_s=LBDA_DEFAULT,
-            alpha=args.alpha,
+            alpha=LCB_ALPHA,
             chunk_size=CHUNK_SIZE,
             seed=r,
             synthetic_data=True,
         )
         delayed_runs.append(delayed(run_one_regr_perf_cmp)(**kwargs))
 
-    results = Parallel(verbose=args.joblib_verbose, n_jobs=N_JOBS)(delayed_runs)
+    results = Parallel(verbose=JOBLIB_VERBOSE, n_jobs=N_JOBS)(delayed_runs)
 
 ###############################################################################
 # Plotting
     main_axis = [
-        "Target-only ridge",
-        "Mixed-task ridge",
-        "Hierarchical regression",
+        "Target-only",
+        "Mixed",
+        "Hierarchical",
         "Chen et al, 2014",
         "Obst et al, 2021",
         "Zhang et al, 2025",
-        "Proposed (greedy)",
+        "Proposed",
+        "Proposed (oracle)",
     ]
     secondary_axis = None
     uncertainty = False
+    uncertainty_style = "band"
     plot_stats_evol(
-        results=[res["error:"] for res in results],
+        results=[res["error"] for res in results],
         xlogscale=True,
         ylogscale=True,
         start=START_PLOT,
@@ -122,20 +133,23 @@ if __name__ == "__main__":
         secondary_axis=secondary_axis,
         figsize=(3.75, 4.5),
         uncertainty=uncertainty,
-        title=r"$\varepsilon  =  $" + f"{args.eps:.2f}",
+        uncertainty_style=uncertainty_style,
+        title=title,
         xlabel=r"$n_T$",
         lw=LW,
         alpha=ALPHA,
         fontsize=FONTSIZE,
+        markersize=MARKERSIZE,
         ncols_legend=2,
         legend_y_pad=1.35,
         figures_dir=FIGURES_DIR,
-        filename="8_performance_error_comparison_multi_source",
-        filename_suffix=f"__eps_{args.eps:.2f}",
+        filename="08_performance_error_comparison_multi_source",
+        filename_suffix=f"_eps_{args.eps:.1f}",
         verbose=True,
     )
+
     plot_stats_evol(
-        results=[res["mse:"] for res in results],
+        results=[res["mse"] for res in results],
         xlogscale=True,
         ylogscale=True,
         start=START_PLOT,
@@ -143,16 +157,18 @@ if __name__ == "__main__":
         secondary_axis=secondary_axis,
         figsize=(3.75, 4.5),
         uncertainty=uncertainty,
-        title=r"$\varepsilon  =  $" + f"{args.eps:.2f}",
+        uncertainty_style=uncertainty_style,
+        title=title,
         xlabel=r"$n_T$",
         lw=LW,
         alpha=ALPHA,
         fontsize=FONTSIZE,
+        markersize=MARKERSIZE,
         ncols_legend=2,
         legend_y_pad=1.35,
         figures_dir=FIGURES_DIR,
-        filename="8_performance_mse_comparison_multi_source",
-        filename_suffix=f"__eps_{args.eps:.2f}",
+        filename="08_performance_mse_comparison_multi_source",
+        filename_suffix=f"_eps_{args.eps:.1f}",
         verbose=True,
     )
 

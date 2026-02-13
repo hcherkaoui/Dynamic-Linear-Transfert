@@ -1,13 +1,11 @@
 """Collaboration criteria illustration."""
 from __future__ import annotations
-import argparse
 import time
 import numpy as np
 from joblib import Parallel, delayed
-from dyntr.datasets import fetch_synthetic_datasets
-from dyntr.utils import format_duration, print_dataset_info, set_random_state
-from config import get_config
-from experiments import run_one_regr_perf_cmp
+from dyntr.datasets import synth_regr_data
+from dyntr.utils import format_duration, set_random_state
+from experiments import run_one_regr_perf_cmp, get_config
 from plotting import plot_stats_evol
 
 
@@ -15,29 +13,29 @@ _CFG = get_config()
 N_JOBS = _CFG.N_JOBS
 N_RUNS = _CFG.N_RUNS
 ALPHA = _CFG.ALPHA
+MARKERSIZE = _CFG.MARKERSIZE
+FONTSIZE = _CFG.FONTSIZE
+LCB_ALPHA = _CFG.MODEL_ALPHA
 FIGURES_DIR = _CFG.FIGURES_DIR
 SEED = _CFG.SEED
 LBDA_DEFAULT = _CFG.LBDA_DEFAULT
 D = _CFG.D
 SIGMA = _CFG.SIGMA
+N_T = _CFG.N_T
+N_S = _CFG.N_TRAIN_SAMPLES
+JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
+CHUNK_SIZE = _CFG.CHUNK_SIZE
 
 t0 = time.time()
 
-FONTSIZE_LOCAL = 19  # text will be cropped anyway
-FIGSIZE = (3.75, 3.5)
-N_T_MIN = 10  # to center the curves crossroad
-LW_LOCAL = 6
+FIGSIZE = (3.75, 4.5)
+N_T_MIN = 10            # to center the curves crossroad
+LW_LOCAL = 5
+EPS = 0.5               # to avoid trivial case
 
 ###############################################################################
 # Settings
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--eps", type=float, required=True, help="L2-norm approximation error.")
-    parser.add_argument("-n_t", type=int, default=500, help="Number of samples to keep from dataset target.")
-    parser.add_argument("-n_s", type=int, default=1000, help="Number of samples to keep from dataset source.")
-    parser.add_argument("--alpha", type=float, required=True, help="LCB parameter.")
-    parser.add_argument("--joblib-verbose", type=int, default=0, help="Verbosity for joblib (0 = silent).")
-    args = parser.parse_args()
 
     set_random_state(seed=SEED)
 
@@ -45,11 +43,15 @@ if __name__ == "__main__":
 # Data
     sigma_t = SIGMA
     sigma_s = SIGMA
-    data = fetch_synthetic_datasets(
-        n_t_train=args.n_t,
-        n_s_train=args.n_s,
+    data = synth_regr_data(
+        n_t_train=N_T,
+        n_t_val=max(1, N_T // 50),
+        n_t_test=max(1, N_T // 50),
+        n_s_train=N_S,
+        n_s_val=max(1, N_S // 50),
+        n_s_test=max(1, N_S // 50),
         d=D,
-        eps=args.eps,
+        eps=EPS,
         sigma_t=sigma_t,
         sigma_s=sigma_s,
     )
@@ -66,14 +68,13 @@ if __name__ == "__main__":
     theta_s = data["meta"]["theta_s"]
 
     print("[INFO] Running optimal sample sharing experiment...")
-    print_dataset_info(X_t, y_t, X_s, y_s, X_t_val, X_t_test, theta_t, sigma_t, sigma_s)
 
 ###############################################################################
 # Main
     delayed_runs = []
     for r in range(N_RUNS):
         kwargs = dict(
-            n_samples_target=args.n_t,
+            n_samples_target=N_T,
             theta_t=theta_t,
             theta_s=theta_s,
             X_t_train=X_t,
@@ -87,23 +88,27 @@ if __name__ == "__main__":
             sigma_t=sigma_t,
             sigma_s=sigma_s,
             lbda_s=LBDA_DEFAULT,
-            alpha=args.alpha,
+            alpha=LCB_ALPHA,
+            chunk_size=CHUNK_SIZE,
             min_n_samples_target=N_T_MIN,
             seed=r,
             synthetic_data=True,
         )
         delayed_runs.append(delayed(run_one_regr_perf_cmp)(**kwargs))
 
-    results = Parallel(verbose=args.joblib_verbose, n_jobs=N_JOBS)(delayed_runs)
-    results = [res["error:"] for res in results]
+    results = Parallel(verbose=JOBLIB_VERBOSE, n_jobs=N_JOBS)(delayed_runs)
 
 ###############################################################################
 # Plotting
-    main_axis = ["Target-only ridge", "Mixed-task ridge", "Proposed (greedy)", "Proposed (uniform)"]
+    main_axis = ["Target-only",
+                 "Mixed",
+                 "Proposed",
+                 "Proposed (oracle)",
+                 ]
     secondary_axis = None
     uncertainty = False
     plot_stats_evol(
-        results=results,
+        results=[res["error"] for res in results],
         xlogscale=True,
         ylogscale=True,
         main_axis=main_axis,
@@ -114,12 +119,13 @@ if __name__ == "__main__":
         xlabel=r"$n_T$",
         lw=LW_LOCAL,
         alpha=ALPHA,
-        fontsize=FONTSIZE_LOCAL,
+        fontsize=FONTSIZE,
+        markersize=MARKERSIZE,
         ncols_legend=2,
         legend_y_pad=1.25,
         figures_dir=FIGURES_DIR,
-        filename="7_intro_illustration",
-        filename_suffix=f"__eps_{args.eps:.2f}",
+        filename="07_intro_illus",
+        filename_suffix=f"_eps_{EPS:.2f}",
         verbose=True,
     )
 

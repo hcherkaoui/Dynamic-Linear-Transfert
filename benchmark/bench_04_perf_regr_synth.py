@@ -4,10 +4,9 @@ import argparse
 import time
 import numpy as np
 from joblib import Parallel, delayed
-from dyntr.datasets import fetch_synthetic_datasets
-from dyntr.utils import format_duration, print_dataset_info, set_random_state
-from config import get_config
-from experiments import run_one_regr_perf_cmp
+from dyntr.datasets import synth_regr_data
+from dyntr.utils import format_duration, set_random_state
+from experiments import run_one_regr_perf_cmp, get_config
 from plotting import plot_stats_evol
 
 
@@ -17,11 +16,17 @@ N_RUNS = _CFG.N_RUNS
 FONTSIZE = _CFG.FONTSIZE
 LW = _CFG.LW
 ALPHA = _CFG.ALPHA
+MARKERSIZE = _CFG.MARKERSIZE
+LCB_ALPHA = _CFG.MODEL_ALPHA
 FIGURES_DIR = _CFG.FIGURES_DIR
 SEED = _CFG.SEED
 LBDA_DEFAULT = _CFG.LBDA_DEFAULT
 D = _CFG.D
 SIGMA = _CFG.SIGMA
+N_T = _CFG.N_T
+N_S = _CFG.N_TRAIN_SAMPLES
+JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
+CHUNK_SIZE = _CFG.CHUNK_SIZE
 
 t0 = time.time()
 
@@ -31,25 +36,23 @@ t0 = time.time()
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--eps", type=float, required=True, help="L2-norm approximation error.")
-    parser.add_argument("-n_t", type=int, default=500, help="Number of samples to keep from dataset target.")
-    parser.add_argument("-n_s", type=int, default=1000, help="Number of samples to keep from dataset source.")
-    parser.add_argument("--alpha", type=float, required=True, help="LCB parameter.")
-    parser.add_argument("--joblib-verbose", type=int, default=0, help="Verbosity for joblib (0 = silent).")
     args = parser.parse_args()
 
     set_random_state(seed=SEED)
 
 ###############################################################################
 # Data
-    sigma_t = SIGMA
-    sigma_s = SIGMA
-    data = fetch_synthetic_datasets(
-        n_t_train=args.n_t,
-        n_s_train=args.n_s,
+    data = synth_regr_data(
+        n_t_train=N_T,
+        n_t_val=max(1, N_T // 50),
+        n_t_test=max(1, N_T // 50),
+        n_s_train=N_S,
+        n_s_val=max(1, N_S // 50),
+        n_s_test=max(1, N_S // 50),
         d=D,
         eps=args.eps,
-        sigma_t=sigma_t,
-        sigma_s=sigma_s,
+        sigma_t=SIGMA,
+        sigma_s=SIGMA,
     )
 
     X_t, y_t = data["target_train"]
@@ -63,15 +66,12 @@ if __name__ == "__main__":
     theta_t = data["meta"]["theta_t"]
     theta_s = data["meta"]["theta_s"]
 
-    print("[INFO] Running optimal sample sharing experiment...")
-    print_dataset_info(X_t, y_t, X_s, y_s, X_t_val, X_t_test, theta_t, sigma_t, sigma_s)
-
 ###############################################################################
 # Main
     delayed_runs = []
     for r in range(N_RUNS):
         kwargs = dict(
-            n_samples_target=args.n_t,
+            n_samples_target=N_T,
             theta_t=theta_t,
             theta_s=theta_s,
             X_t_train=X_t,
@@ -82,67 +82,75 @@ if __name__ == "__main__":
             y_t_test=y_t_test,
             l_X_s=l_X_s,
             l_y_s=l_y_s,
-            sigma_t=sigma_t,
-            sigma_s=sigma_s,
+            sigma_t=SIGMA,
+            sigma_s=SIGMA,
             lbda_s=LBDA_DEFAULT,
-            alpha=args.alpha,
+            alpha=LCB_ALPHA,
+            chunk_size=CHUNK_SIZE,
             seed=r,
             synthetic_data=True,
         )
         delayed_runs.append(delayed(run_one_regr_perf_cmp)(**kwargs))
 
-    results = Parallel(verbose=args.joblib_verbose, n_jobs=N_JOBS)(delayed_runs)
+    results = Parallel(verbose=JOBLIB_VERBOSE, n_jobs=N_JOBS)(delayed_runs)
 
 ###############################################################################
 # Plotting
     main_axis = [
-        "Target-only ridge",
-        "Mixed-task ridge",
-        "Hierarchical regression",
+        "Target-only",
+        "Mixed",
+        "Hierarchical",
         "Chen et al, 2014",
         "Obst et al, 2021",
-        "Proposed (greedy)",
+        "Zhang et al, 2025",
+        "Proposed",
+        "Proposed (oracle)",
     ]
     secondary_axis = None
     uncertainty = False
+    uncertainty_style = "band"
     plot_stats_evol(
-        results=[res["error:"] for res in results],
+        results=[res["error"] for res in results],
         xlogscale=True,
         ylogscale=True,
         main_axis=main_axis,
         secondary_axis=secondary_axis,
         figsize=(3.75, 4.5),
         uncertainty=uncertainty,
-        title=r"$\varepsilon  =  $" + f"{args.eps:.2f}",
+        uncertainty_style=uncertainty_style,
+        title=r"$\varepsilon  =  $" + f"{args.eps:.1f}" + r"$\,\cdot\,\|\theta_T^{\star}\|_2$",
         xlabel=r"$n_T$",
         lw=LW,
         alpha=ALPHA,
         fontsize=FONTSIZE,
-        ncols_legend=2,
-        legend_y_pad=1.25,
-        figures_dir=FIGURES_DIR,
-        filename="4_performance_error_comparison",
-        filename_suffix=f"__eps_{args.eps:.2f}",
-        verbose=True,
-    )
-    plot_stats_evol(
-        results=[res["mse:"] for res in results],
-        xlogscale=True,
-        ylogscale=True,
-        main_axis=main_axis,
-        secondary_axis=secondary_axis,
-        figsize=(3.75, 4.5),
-        uncertainty=uncertainty,
-        title=r"$\varepsilon  =  $" + f"{args.eps:.2f}",
-        xlabel=r"$n_T$",
-        lw=LW,
-        alpha=ALPHA,
-        fontsize=FONTSIZE,
+        markersize=MARKERSIZE,
         ncols_legend=2,
         legend_y_pad=1.35,
         figures_dir=FIGURES_DIR,
-        filename="4_performance_mse_comparison",
-        filename_suffix=f"__eps_{args.eps:.2f}",
+        filename="04_performance_error_comparison",
+        filename_suffix=f"_eps_{args.eps:.1f}",
+        verbose=True,
+    )
+    plot_stats_evol(
+        results=[res["mse"] for res in results],
+        xlogscale=True,
+        ylogscale=True,
+        main_axis=main_axis,
+        secondary_axis=secondary_axis,
+        figsize=(3.75, 4.5),
+        uncertainty=uncertainty,
+        uncertainty_style=uncertainty_style,
+        title=r"$\varepsilon  =  $" + f"{args.eps:.1f}" + r"$\,\cdot\,\|\theta_T^{\star}\|_2$",
+        xlabel=r"$n_T$",
+        lw=LW,
+        alpha=ALPHA,
+        fontsize=FONTSIZE,
+        markersize=MARKERSIZE,
+        ncols_legend=2,
+        legend_y_pad=1.35,
+        figures_dir=FIGURES_DIR,
+        filename="04_performance_mse_comparison",
+        filename_suffix=f"_eps_{args.eps:.1f}",
         verbose=True,
     )
 

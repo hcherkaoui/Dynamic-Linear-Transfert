@@ -4,10 +4,9 @@ import argparse
 import time
 import numpy as np
 from joblib import Parallel, delayed
-from dyntr.datasets import fetch_synthetic_datasets
+from dyntr.datasets import synth_regr_data
 from dyntr.utils import format_duration, print_dataset_info, set_random_state
-from config import get_config
-from experiments import run_one_lbda_infl
+from experiments import run_one_lbda_infl, get_config
 from plotting import plot_stats_evol
 
 
@@ -17,11 +16,16 @@ N_RUNS = _CFG.N_RUNS
 FONTSIZE = _CFG.FONTSIZE
 LW = _CFG.LW
 ALPHA = _CFG.ALPHA
+MARKERSIZE = _CFG.MARKERSIZE
+LCB_ALPHA = _CFG.MODEL_ALPHA
 FIGURES_DIR = _CFG.FIGURES_DIR
 SEED = _CFG.SEED
 D = _CFG.D
 SIGMA = _CFG.SIGMA
 EPS = _CFG.EPS
+N_T = _CFG.N_T
+N_S = _CFG.N_TRAIN_SAMPLES
+JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
 
 t0 = time.time()
 
@@ -30,11 +34,7 @@ t0 = time.time()
 # Settings
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--alpha", type=float, default=1.0, help="LCB parameter.")
-    parser.add_argument("-n_t", type=int, default=500, help="Number of samples to keep from dataset target.")
-    parser.add_argument("-n_s", type=int, default=1000, help="Number of samples to keep from dataset source.")
-    parser.add_argument("--joblib-verbose", type=int, default=0, help="Verbosity for joblib (0 = silent).")
-    args = parser.parse_args()
+    _ = parser.parse_args()
 
 ###############################################################################
 # Data
@@ -42,9 +42,13 @@ if __name__ == "__main__":
     sigma_t = SIGMA
     sigma_s = 0.5 * SIGMA
     eps = EPS[0] if isinstance(EPS, list) else EPS
-    data = fetch_synthetic_datasets(
-        n_t_train=args.n_t,
-        n_s_train=args.n_s,
+    data = synth_regr_data(
+        n_t_train=N_T,
+        n_t_val=max(1, N_T // 50),
+        n_t_test=max(1, N_T // 50),
+        n_s_train=N_S,
+        n_s_val=max(1, N_S // 50),
+        n_s_test=max(1, N_S // 50),
         d=D,
         eps=eps,
         sigma_t=sigma_t,
@@ -82,13 +86,13 @@ if __name__ == "__main__":
             l_y_s=l_y_s,
             sigma_t=sigma_t,
             sigma_s=sigma_s,
-            alpha=args.alpha,
+            alpha=LCB_ALPHA,
             seed=r,
             synthetic_data=True,
         )
         delayed_runs.append(delayed(run_one_lbda_infl)(**kwargs))
 
-    results = Parallel(verbose=args.joblib_verbose, n_jobs=N_JOBS)(delayed_runs)
+    results = Parallel(verbose=JOBLIB_VERBOSE, n_jobs=N_JOBS)(delayed_runs)
 
 ###############################################################################
 # Plotting
@@ -100,7 +104,7 @@ if __name__ == "__main__":
         results=results,
         xlogscale=True,
         ylogscale=False,
-        nice_xlogscale=False,
+        nice_ticks=True,
         main_axis=main_axis,
         secondary_axis=secondary_axis,
         main_axis_ref_line=0.0,
@@ -111,10 +115,11 @@ if __name__ == "__main__":
         lw=LW,
         alpha=ALPHA,
         fontsize=FONTSIZE,
-        ncols_legend=1,
+        markersize=MARKERSIZE,
+        ncols_legend=2,
         legend_y_pad=1.25,
         figures_dir=FIGURES_DIR,
-        filename="6_lbda_influence",
+        filename="06_lbda_influence",
         filename_suffix="",
         verbose=True,
     )

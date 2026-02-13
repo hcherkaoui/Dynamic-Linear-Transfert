@@ -5,17 +5,111 @@ from typing import Iterable, Tuple
 import matplotlib.pyplot as plt
 from matplotlib import ticker
 import numpy as np
-from config import get_config
+from experiments import get_config
 
+PRETTY_RCPARAMS = {
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "STIXGeneral", "DejaVu Serif"],
+    "mathtext.fontset": "stix",
+    "font.size": 16,
+    "axes.labelsize": 13,
+    "axes.titlesize": 17,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 13,
+    "figure.titlesize": 17,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.edgecolor": "#333333",
+    "axes.linewidth": 0.8,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "grid.linestyle": "--",
+    "grid.linewidth": 0.8,
+    "axes.axisbelow": True,
+    "lines.linewidth": 2.2,
+    "lines.solid_capstyle": "round",
+    "lines.solid_joinstyle": "round",
+    "xtick.direction": "out",
+    "ytick.direction": "out",
+    "xtick.major.size": 3.5,
+    "ytick.major.size": 3.5,
+    "xtick.major.width": 0.8,
+    "ytick.major.width": 0.8,
+    "legend.frameon": False,
+    "figure.dpi": 160,
+    "savefig.dpi": 400,
+    "savefig.bbox": "tight",
+    "savefig.pad_inches": 0.05,
+    "savefig.transparent": False,
+}
+plt.rcParams.update(PRETTY_RCPARAMS)
 
 _CFG = get_config()
 
 
-def _set_nice_log_xticks(ax):
-    """Set the x-tickts locator to be adapted to a log scale."""
-    ax.xaxis.set_major_locator(ticker.LogLocator(base=10, subs=(1.0,), numticks=12))
-    ax.xaxis.set_minor_locator(ticker.NullLocator())
-    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x)}"))
+def _set_nice_ticks(ax, *, xscale=None, yscale=None, nbins=6, y_decimals=3):
+    """Apply readable tick locators/formatters for linear or log axes.
+    Uses short decimals and clean $10^k$ labels, avoiding verbose scientific notation.
+    """
+    xscale = ax.get_xscale() if xscale is None else xscale
+    yscale = ax.get_yscale() if yscale is None else yscale
+
+    def _fmt_plain(v, _):
+        if not np.isfinite(v):
+            return ""
+        if abs(v) < 1e-12:
+            return "0"
+        return f"{v:.{y_decimals}f}".rstrip("0").rstrip(".")
+
+    def _fmt_pow10(v, _):
+        if not np.isfinite(v) or v <= 0.0:
+            return ""
+        e = int(np.round(np.log10(v)))
+        p = 10.0 ** e
+        if abs(v - p) <= 1e-10 * max(1.0, abs(v)):
+            return "1" if e == 0 else rf"$10^{{{e}}}$"
+        return f"{v:.{y_decimals}f}".rstrip("0").rstrip(".")
+
+    def _set_linear_axis(axis):
+        axis.set_major_locator(ticker.MaxNLocator(nbins=nbins, steps=[1, 2, 2.5, 5, 10]))
+        axis.set_minor_locator(ticker.NullLocator())
+        axis.set_major_formatter(ticker.FuncFormatter(_fmt_plain))
+
+    def _set_log_axis(axis, lim0, lim1):
+        axis.set_minor_locator(ticker.NullLocator())
+        if lim0 > 0.0 and lim1 > 0.0 and (lim1 / lim0) < 10.0:
+            loc = ticker.MaxNLocator(nbins=nbins, steps=[1, 2, 2.5, 5, 10])
+            ticks = loc.tick_values(lim0, lim1)
+            ticks = ticks[(ticks >= min(lim0, lim1)) & (ticks <= max(lim0, lim1)) & (ticks > 0.0)]
+            if ticks.size >= 2:
+                axis.set_major_locator(ticker.FixedLocator(ticks))
+            else:
+                axis.set_major_locator(ticker.LogLocator(base=10, subs=(1.0,), numticks=12))
+            axis.set_major_formatter(ticker.FuncFormatter(_fmt_plain))
+        else:
+            axis.set_major_locator(ticker.LogLocator(base=10, subs=(1.0,), numticks=12))
+            axis.set_major_formatter(ticker.FuncFormatter(_fmt_pow10))
+
+    if xscale == "log":
+        x0, x1 = ax.get_xlim()
+        _set_log_axis(ax.xaxis, x0, x1)
+    else:
+        _set_linear_axis(ax.xaxis)
+
+    if yscale == "log":
+        y0, y1 = ax.get_ylim()
+        _set_log_axis(ax.yaxis, y0, y1)
+    else:
+        _set_linear_axis(ax.yaxis)
+
+    if ax.get_xticks().size < 2:
+        x0, x1 = ax.get_xlim()
+        ax.xaxis.set_major_locator(ticker.FixedLocator([x0, x1]))
+
+    if ax.get_yticks().size < 2:
+        y0, y1 = ax.get_ylim()
+        ax.yaxis.set_major_locator(ticker.FixedLocator([y0, y1]))
 
 
 def plot_stats_evol(
@@ -24,7 +118,7 @@ def plot_stats_evol(
     axis=None,
     xlogscale=False,
     ylogscale=False,
-    nice_xlogscale=True,
+    nice_ticks=True,
     ytwinlogscale=False,
     main_axis=None,
     secondary_axis=None,
@@ -33,12 +127,15 @@ def plot_stats_evol(
     sharex=False,
     sharey=False,
     uncertainty=True,
+    uncertainty_style="band",
     figsize=(4.0, 4.0),
     title="",
     xlabel="",
+    ylabel="",
     lw=_CFG.LW,
     alpha=_CFG.ALPHA,
     fontsize=_CFG.FONTSIZE,
+    markersize=_CFG.MARKERSIZE,
     ncols_legend=1,
     legend_y_pad=1.3,
     figures_dir=_CFG.FIGURES_DIR,
@@ -61,8 +158,6 @@ def plot_stats_evol(
         Optional axis to plot onto.
     xlogscale, ylogscale, ytwinlogscale
         Whether to apply log scaling on axes.
-    nice_xlogscale
-        Option to enable 'nice' x-axis log-scale.
     main_axis
         Names to be plotted on the main (left) y-axis.
     secondary_axis
@@ -79,6 +174,8 @@ def plot_stats_evol(
         Title name.
     xlabel
         X-axis label.
+    ylabel
+        Y-axis label.
     lw, alpha, fontsize
         Line width, alpha, and font size for plots.
     ncols_legend
@@ -121,12 +218,30 @@ def plot_stats_evol(
     ax_twin = ax.twinx() if sec_names else None
     warned_nan = False
 
+    if ax_twin is not None:
+        ax_twin.spines["right"].set_visible(True)
+        ax_twin.spines["left"].set_visible(False)
+        ax_twin.yaxis.set_ticks_position("right")
+        ax_twin.yaxis.set_label_position("right")
+        ax_twin.tick_params(axis="y", which="both", right=True, labelright=True)
+        ax_twin.patch.set_visible(False)
+
     # Plot curves
     for result in zip(*results):
-        name, color, linestyle, tt, test_value = zip(*result)
+        if isinstance(result, dict):
+            result_list = [result]
+        else:
+            result_list = list(result)
 
-        tt = np.asarray(tt[0]).ravel()
-        vals = np.asarray(test_value)
+        meta = result_list[0]
+        name = meta.get("name", "Unknown")
+        color = meta.get("color", "gray")
+        linestyle = meta.get("style", "-")
+        markerstyle = meta.get("marker", "")
+        tt = np.asarray(meta.get("n_samples", [])).ravel()
+
+        metric_vals = [r.get("metric", []) for r in result_list]
+        vals = np.asarray(metric_vals)
         if vals.ndim == 1:
             vals = vals[None, :]
 
@@ -142,13 +257,13 @@ def plot_stats_evol(
             if uncertainty:
                 std_stats = np.std(vals, axis=0)
 
-        if name[0] in main_names:
+        if name in main_names:
             ax_use = ax
-        elif ax_twin is not None and name[0] in sec_names:
+        elif ax_twin is not None and name in sec_names:
             ax_use = ax_twin
         else:
             if verbose:
-                print(f"[INFO] '{name[0]}' not displayed (not in main/secondary_axis).")
+                print(f"[INFO] '{name}' not displayed (not in main/secondary_axis).")
             ax_use = None
 
         if ax_use is not None:
@@ -156,19 +271,32 @@ def plot_stats_evol(
                 tt[start:],
                 mean_stats[start:],
                 lw=lw,
-                color=color[0],
-                linestyle=linestyle[0],
-                label=name[0],
+                color=color,
+                linestyle=linestyle,
+                marker=markerstyle if markerstyle else "",
+                markersize=markersize,
+                label=name,
                 alpha=alpha,
             )
             if uncertainty:
-                ax_use.fill_between(
-                    tt[start:],
-                    mean_stats[start:] - std_stats[start:],
-                    mean_stats[start:] + std_stats[start:],
-                    color=color[0],
-                    alpha=alpha / 3,
-                )
+                if uncertainty_style == "errorbar":
+                    ax_use.errorbar(
+                        tt[start:],
+                        mean_stats[start:],
+                        yerr=std_stats[start:],
+                        fmt="-",
+                        capsize=3,
+                        color=color,
+                        alpha=alpha,
+                    )
+                else:
+                    ax_use.fill_between(
+                        tt[start:],
+                        mean_stats[start:] - std_stats[start:],
+                        mean_stats[start:] + std_stats[start:],
+                        color=color,
+                        alpha=alpha / 3,
+                    )
 
     # Reference lines
     if main_axis_ref_line is not None:
@@ -186,8 +314,6 @@ def plot_stats_evol(
     # Scaling
     if xlogscale:
         ax.set_xscale("log", base=10)
-        if nice_xlogscale:
-            _set_nice_log_xticks(ax)
 
     if ylogscale:
         ax.set_yscale("log", base=10)
@@ -201,6 +327,11 @@ def plot_stats_evol(
     if ylim_secondary is not None and ax_twin is not None:
         ax_twin.set_ylim(*ylim_secondary)
 
+    if nice_ticks:
+        _set_nice_ticks(ax, xscale=ax.get_xscale(), yscale=ax.get_yscale())
+        if ax_twin is not None:
+            _set_nice_ticks(ax_twin, xscale=ax.get_xscale(), yscale=ax_twin.get_yscale())
+
     # Ticks and labels
     tick_fs = int(0.9 * fontsize)
     ax.tick_params(axis="x", which="both", labelsize=tick_fs)
@@ -210,9 +341,10 @@ def plot_stats_evol(
 
     if title:
         ax.set_title(title, fontsize=fontsize)
-
     if xlabel:
         ax.set_xlabel(xlabel, fontsize=fontsize)
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=fontsize)
 
     # Legend
     handles, labels = ax.get_legend_handles_labels()

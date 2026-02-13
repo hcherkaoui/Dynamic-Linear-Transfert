@@ -2,12 +2,10 @@
 from __future__ import annotations
 import argparse
 import time
-import numpy as np
 from joblib import Parallel, delayed
-from dyntr.datasets import fetch_synthetic_datasets
-from dyntr.utils import format_duration, print_dataset_info, set_random_state
-from config import get_config
-from experiments import run_one_delta_illus
+from dyntr.datasets import synth_regr_data
+from dyntr.utils import format_duration, set_random_state
+from experiments import run_one_delta_illus, get_config
 from plotting import plot_stats_evol
 
 
@@ -17,11 +15,15 @@ N_RUNS = _CFG.N_RUNS
 FONTSIZE = _CFG.FONTSIZE
 LW = _CFG.LW
 ALPHA = _CFG.ALPHA
+MARKERSIZE = _CFG.MARKERSIZE
 FIGURES_DIR = _CFG.FIGURES_DIR
 SEED = _CFG.SEED
 LBDA_DEFAULT = _CFG.LBDA_DEFAULT
 D = _CFG.D
 SIGMA = _CFG.SIGMA
+N_T = _CFG.N_T
+N_S = _CFG.N_TRAIN_SAMPLES
+JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
 
 
 t0 = time.time()
@@ -32,9 +34,6 @@ t0 = time.time()
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--eps", type=float, required=True, help="L2-norm approximation error.")
-    parser.add_argument("-n_t", type=int, default=500, help="Number of samples to keep from dataset target.")
-    parser.add_argument("-n_s", type=int, default=1000, help="Number of samples to keep from dataset source.")
-    parser.add_argument("--joblib-verbose", type=int, default=0, help="Verbosity for joblib (0 = silent).")
     args = parser.parse_args()
 
     set_random_state(seed=SEED)
@@ -43,9 +42,13 @@ if __name__ == "__main__":
 # Data
     sigma_t = SIGMA
     sigma_s = 0.5 * SIGMA
-    data = fetch_synthetic_datasets(
-        n_t_train=args.n_t,
-        n_s_train=args.n_s,
+    data = synth_regr_data(
+        n_t_train=N_T,
+        n_t_val=max(1, N_T // 50),
+        n_t_test=max(1, N_T // 50),
+        n_s_train=N_S,
+        n_s_val=max(1, N_S // 50),
+        n_s_test=max(1, N_S // 50),
         d=D,
         eps=args.eps,
         sigma_t=sigma_t,
@@ -57,21 +60,15 @@ if __name__ == "__main__":
     X_t_test, y_t_test = data["target_test"]
     l_X_s, l_y_s = data["source_train"]
 
-    X_s = np.vstack(l_X_s)
-    y_s = np.concatenate(l_y_s)
-
     theta_t = data["meta"]["theta_t"]
     theta_s = data["meta"]["theta_s"]
-
-    print("[INFO] Running optimal sample sharing experiment...")
-    print_dataset_info(X_t, y_t, X_s, y_s, X_t_val, X_t_test, theta_t, sigma_t, sigma_s)
 
 ###############################################################################
 # Main
     delayed_runs = []
     for r in range(N_RUNS):
         kwargs = dict(
-            n_samples_target=args.n_t,
+            n_samples_target=N_T,
             theta_t=theta_t,
             theta_s=theta_s,
             X_t_train=X_t,
@@ -92,7 +89,7 @@ if __name__ == "__main__":
         )
         delayed_runs.append(delayed(run_one_delta_illus)(**kwargs))
 
-    results = Parallel(verbose=args.joblib_verbose, n_jobs=N_JOBS)(delayed_runs)
+    results = Parallel(verbose=JOBLIB_VERBOSE, n_jobs=N_JOBS)(delayed_runs)
 
 ###############################################################################
 # Plotting
@@ -104,16 +101,17 @@ if __name__ == "__main__":
         main_axis_ref_line=0.0,
         figsize=(3.5, 3.2),
         uncertainty=True,
-        title=r"$\varepsilon  =  $" + f"{args.eps:.2f}",
+        title=r"$\varepsilon  =  $" + f"{args.eps:.1f}",
         xlabel=r"$n$",
         lw=LW,
         alpha=ALPHA,
         fontsize=FONTSIZE,
+        markersize=MARKERSIZE,
         ncols_legend=2,
         legend_y_pad=1.15,
         figures_dir=FIGURES_DIR,
-        filename="1_delta_illustration",
-        filename_suffix=f"__eps_{args.eps:.2f}",
+        filename="01_delta_regr_illus",
+        filename_suffix=f"_eps_{args.eps:.1f}",
         verbose=True,
     )
 
