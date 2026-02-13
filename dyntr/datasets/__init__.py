@@ -6,7 +6,7 @@ from ._datasets import _assert_is_regression, _condition_blocks, _bootstrap_sour
 from ._datasets import _load_boston_dataset, _load_hillstrom_dataset
 
 
-def fetch_synthetic_datasets(
+def synth_regr_data(
     n_t_train=10000,
     n_t_val=1000,
     n_t_test=1000,
@@ -133,7 +133,7 @@ def fetch_synthetic_datasets(
     return out
 
 
-def fetch_synthetic_classification_datasets(
+def synth_classif_data(
     n_t_train=10000,
     n_t_val=1000,
     n_t_test=1000,
@@ -153,7 +153,7 @@ def fetch_synthetic_classification_datasets(
 
     Labels are in {-1, +1} based on the sign of X @ theta plus Gaussian noise.
     """
-    data = fetch_synthetic_datasets(
+    data = synth_regr_data(
         n_t_train=n_t_train,
         n_t_val=n_t_val,
         n_t_test=n_t_test,
@@ -190,7 +190,7 @@ def fetch_synthetic_classification_datasets(
     return data
 
 
-def fetch_real_datasets(
+def real_regr_data(
     dataset_name: str,
     n_t_train=500,
     n_t_val=200,

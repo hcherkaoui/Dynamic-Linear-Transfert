@@ -7,7 +7,7 @@ import pandas as pd
 from sklearn.datasets import fetch_california_housing
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-
+from ..utils import check_random_state
 
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -18,17 +18,9 @@ def _generate_thetas(
     random_state=None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Return theta_s, theta_t such that ||theta_s - theta_t||_2  =  epsilon."""
-    if d <= 0:
-        raise ValueError("d must be positive.")
-    if epsilon < 0:
-        raise ValueError("epsilon must be >= 0")
-
-    if random_state is None:
-        rng = np.random.default_rng()
-    elif isinstance(random_state, (int, np.integer)):
-        rng = np.random.default_rng(random_state)
-    else:
-        rng = random_state
+    assert d > 0, "Dimension must be positive."
+    assert epsilon >= 0, "Epsilon must be non-negative."
+    rng = check_random_state(random_state)
 
     theta_s = rng.normal(size=d)
     v = rng.normal(size=d)
