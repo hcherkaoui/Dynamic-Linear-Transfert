@@ -22,15 +22,15 @@ LBDA_DEFAULT = _CFG.LBDA_DEFAULT
 D = _CFG.D
 SIGMA = _CFG.SIGMA
 N_T = _CFG.N_T
-N_S = _CFG.N_TRAIN_SAMPLES
+N_S = _CFG.N_S
 JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
 CHUNK_SIZE = _CFG.CHUNK_SIZE
 
 t0 = time.time()
 
-FIGSIZE = (3.75, 4.5)
+FIGSIZE = (4.75, 3.75)
 N_T_MIN = 10            # to center the curves crossroad
-LW_LOCAL = 5
+LW_LOCAL = 6
 EPS = 0.5               # to avoid trivial case
 
 ###############################################################################

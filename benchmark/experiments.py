@@ -7,6 +7,7 @@ import os
 import yaml
 from typing import List, Tuple, Any, Mapping
 import numpy as np
+from scipy import special
 from dyntr.augmenter import SampleAugmenter
 from dyntr.datasets import synth_regr_data
 from dyntr.datasets._datasets import _generate_thetas
@@ -46,7 +47,7 @@ class Config:
     SEED: int
     L_EPS: np.ndarray
     L_SIGMA_S: np.ndarray
-    N_TRAIN_SAMPLES: int
+    N_S: int
     N_T: int
     N_POINTS: int
     SIGMA: float
@@ -98,7 +99,7 @@ def get_config(path: str | None = None) -> Config:
         SEED=int(launcher.get("seed", 0)),
         L_EPS=_logspace(data_cfg.get("l_eps", {"start": -3, "stop": 3, "num": 50})),
         L_SIGMA_S=_logspace(data_cfg.get("l_sigma_s", {"start": -3, "stop": 3, "num": 50})),
-        N_TRAIN_SAMPLES=int(data_cfg.get("n_s", 1000)),
+        N_S=int(data_cfg.get("n_s", 1000)),
         N_T=int(data_cfg.get("n_t", 1000)),
         N_POINTS=int(data_cfg.get("n_points", 20)),
         SIGMA=float(data_cfg.get("sigma", 1.0)),
@@ -113,7 +114,7 @@ def get_config(path: str | None = None) -> Config:
 
 _CFG = get_config()
 SIGMA = _CFG.SIGMA
-N_TRAIN_SAMPLES = _CFG.N_TRAIN_SAMPLES
+N_S = _CFG.N_S
 N_T = _CFG.N_T
 N_POINTS = _CFG.N_POINTS
 
@@ -273,7 +274,7 @@ def run_one_delta_illus(
     A_t_inv = np.linalg.inv(G_t + lbda_t * eye)
     theta_t_hat = A_t_inv @ b_t
 
-    l_Delta_hat, l_Delta_emp = [], []
+    l_Delta_hat, l_Delta_true = [], []
     y_t_unique = np.unique(y_t_train)
 
     is_binary = np.all(np.isin(y_t_unique, [-1.0, 1.0])) or np.all(np.isin(y_t_unique, [0.0, 1.0]))
@@ -317,11 +318,9 @@ def run_one_delta_illus(
                 lbda_s=lbda_s,
             )
 
-        # Empirical: test-feature risk vs theta (not using y_test noise)
-        Delta_emp = float(np.linalg.norm(X_t_test @ (theta_t_hat - theta_t)) ** 2 - np.linalg.norm(X_t_test @ (theta_c_hat - theta_t)) ** 2)
-
+        Delta_true = float(np.linalg.norm(X_t_val @ (theta_t_hat - theta_t)) ** 2 - np.linalg.norm(X_t_val @ (theta_c_hat - theta_t)) ** 2)
         l_Delta_hat.append(Delta_hat)
-        l_Delta_emp.append(Delta_emp)
+        l_Delta_true.append(Delta_true)
 
     return [
         {
@@ -333,12 +332,12 @@ def run_one_delta_illus(
             "metric": np.asarray(l_Delta_hat),
         },
         {
-            "name": r"$\Delta^{\mathrm{emp}}$",
+            "name": r"$\Delta^{\star}$",
             "color": _COLORS["target"],
             "style": "solid",
             "marker": "o",
             "n_samples": nn_samples_target,
-            "metric": np.asarray(l_Delta_emp),
+            "metric": np.asarray(l_Delta_true),
         },
     ]
 
@@ -597,17 +596,14 @@ def run_one_classif_perf_cmp(
 
     lbda_t = opt_lambda(X_t_train, y_t_train, X_t_val, y_t_val)
 
-    def _soft_loss(theta):
-        z = -y_t_test * (X_t_test @ theta)
-        out = np.empty_like(z, dtype=float)
-        pos = z >= 0.0
-        out[pos] = 1.0 / (1.0 + np.exp(-z[pos]))
-        ez = np.exp(z[~pos])
-        out[~pos] = ez / (1.0 + ez)
-        return float(np.mean(out))
+    def _probit(theta):
+        scores = X_t_test @ theta
+        z = special.erf(-y_t_test * scores / np.sqrt(2.0))
+        return float(np.mean(0.5 * (1.0 + z)))
 
-    def _soft_acc(theta):
-        return 1.0 - _soft_loss(theta)
+    def _acc(theta):
+        y = np.where((X_t_test @ theta) >= 0.0, 1.0, -1.0)
+        return float(np.mean(y == y_t_test))
 
     methods = [
         ("Target-only", _COLORS["target"], "solid", _MARKERS["target"], target_classif),
@@ -616,7 +612,7 @@ def run_one_classif_perf_cmp(
         ("Proposed", _COLORS["proposed"], "solid", _MARKERS["proposed"], dyn_greedy_classif),
         ("Proposed (oracle)", _COLORS["oracle"], "solid", _MARKERS["oracle"], oracle_greedy_classif),
     ]
-    series = {name: {"acc": [], "n_s": []} for name, *_ in methods}
+    series = {name: {"probit": [], "acc": [], "n_s": []} for name, *_ in methods}
 
     kwargs = dict(
         theta_t=theta_t,
@@ -637,7 +633,8 @@ def run_one_classif_perf_cmp(
 
         for name, _, _, _, fn in methods:
             theta, _, n_s = fn(**kwargs)
-            series[name]["acc"].append(_soft_acc(theta))
+            series[name]["probit"].append(_probit(theta))
+            series[name]["acc"].append(_acc(theta))
             series[name]["n_s"].append(n_s)
 
     def _pack(metric_key):
@@ -654,12 +651,10 @@ def run_one_classif_perf_cmp(
         ]
 
     return {
+        "probit": _pack("probit"),
         "acc": _pack("acc"),
         "n_s": _pack("n_s"),
     }
-
-
-run_one_perf_cmp = run_one_regr_perf_cmp
 
 
 def run_one_eps_infl(
@@ -694,8 +689,8 @@ def run_one_eps_infl(
         theta_t_and_theta_s = (theta_t, theta_s)
 
         data = synth_regr_data(
-            n_t_train=N_TRAIN_SAMPLES,
-            n_s_train=N_TRAIN_SAMPLES,
+            n_t_train=N_T,
+            n_s_train=N_S,
             d=d,
             eps=eps,
             sigma_t=SIGMA,
@@ -719,13 +714,13 @@ def run_one_eps_infl(
 
         l_n.append(augmenter.get_n_selected())
 
-        err_t = np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)
-        err_c = np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)
+        err_t = np.linalg.norm(X_t_val @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_val)
+        err_c = np.linalg.norm(X_t_val @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_val)
         error_diff.append(err_t - err_c)
 
     return [
         {
-            "name": r"$\Delta^{\mathrm{emp}}$",
+            "name": r"$\Delta^{\star}$",
             "color": _COLORS["proposed"],
             "style": "solid",
             "marker": "o",
@@ -733,7 +728,7 @@ def run_one_eps_infl(
             "metric": np.array(error_diff),
         },
         {
-            "name": r"$n^\star$",
+            "name": r"$\hat{n}$",
             "color": _COLORS["hier"],
             "style": "dashed",
             "marker": "o",
@@ -777,8 +772,8 @@ def run_one_sigma_infl(
 
     for sigma_s in l_sigma_s:
         data = synth_regr_data(
-            n_t_train=N_TRAIN_SAMPLES,
-            n_s_train=N_TRAIN_SAMPLES,
+            n_t_train=N_T,
+            n_s_train=N_S,
             d=d,
             eps=eps,
             sigma_t=SIGMA,
@@ -802,13 +797,13 @@ def run_one_sigma_infl(
 
         l_n.append(augmenter.get_n_selected())
 
-        err_t = np.linalg.norm(X_t_test @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_test)
-        err_c = np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)
+        err_t = np.linalg.norm(X_t_val @ (_ridge(X_t, y_t, lbda_t) - theta_t)) ** 2 / len(X_t_val)
+        err_c = np.linalg.norm(X_t_val @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_val)
         error_diff.append(err_t - err_c)
 
     return [
         {
-            "name": r"$\Delta^{\mathrm{emp}}$",
+            "name": r"$\Delta^{\star}$",
             "color": _COLORS["proposed"],
             "style": "solid",
             "marker": "o",
@@ -816,7 +811,7 @@ def run_one_sigma_infl(
             "metric": np.array(error_diff),
         },
         {
-            "name": r"$n^\star$",
+            "name": r"$\hat{n}$",
             "color": _COLORS["hier"],
             "style": "dashed",
             "marker": "o",
@@ -909,13 +904,13 @@ def run_one_lbda_infl(
 
         l_n.append(augmenter.get_n_selected())
 
-        err_t = np.linalg.norm(X_t_test @ (_ridge(X_t_train, y_t_train, lbda_t) - theta_t)) ** 2 / len(X_t_test)
-        err_c = np.linalg.norm(X_t_test @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_test)
-        error_diff.append(err_t - err_c)
+        err_t = np.linalg.norm(X_t_val @ (_ridge(X_t_train, y_t_train, lbda_t) - theta_t)) ** 2 / len(X_t_val)
+        err_c = np.linalg.norm(X_t_val @ (_ridge(X_c, y_c, lbda_c) - theta_t)) ** 2 / len(X_t_val)
+        error_diff.append(float(err_t - err_c))
 
     return [
         {
-            "name": r"$\Delta^{\mathrm{emp}}$",
+            "name": r"$\Delta^{\star}$",
             "color": _COLORS["proposed"],
             "style": "solid",
             "marker": "o",
@@ -923,7 +918,7 @@ def run_one_lbda_infl(
             "metric": np.array(error_diff),
         },
         {
-            "name": r"$n^\star$",
+            "name": r"$\hat{n}$",
             "color": _COLORS["hier"],
             "style": "dashed",
             "marker": "o",

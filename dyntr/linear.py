@@ -3,20 +3,19 @@ from __future__ import annotations
 from functools import partial
 from textwrap import dedent
 from typing import Tuple
+import math
 import numba
 import numpy as np
 
 
+_INV_SQRT2 = 0.70710678118654752440  # 1/sqrt(2)
+
+
 @numba.jit(nopython=True, cache=True, fastmath=True)
-def _sigmoid_stable(u: np.ndarray) -> np.ndarray:
-    out = np.empty(u.shape[0], dtype=np.float64)
-    for i in range(u.shape[0]):
-        ui = u[i]
-        if ui >= 0.0:
-            out[i] = 1.0 / (1.0 + np.exp(-ui))
-        else:
-            eu = np.exp(ui)
-            out[i] = eu / (1.0 + eu)
+def _phi_vec(x: np.ndarray) -> np.ndarray:
+    out = np.empty_like(x)
+    for i in range(x.shape[0]):
+        out[i] = 0.5 * math.erfc(-x[i] * _INV_SQRT2)
     return out
 
 
@@ -151,19 +150,12 @@ def compute_delta_classif(
     X_val: np.ndarray,
     y_val: np.ndarray,
 ) -> float:
-    n = X_val.shape[0]
-    if n == 0:
-        return 0.0
-
-    for i in range(n):
-        assert (y_val[i] == 1.0) or (y_val[i] == -1.0)
-
     s_t = X_val @ theta_t
     s_c = X_val @ theta_c
-
-    ell_t = _sigmoid_stable(-y_val * s_t)
-    ell_c = _sigmoid_stable(-y_val * s_c)
-
+    z_t = -y_val * s_t
+    z_c = -y_val * s_c
+    ell_t = _phi_vec(z_t)
+    ell_c = _phi_vec(z_c)
     return np.mean(ell_t) - np.mean(ell_c)
 
 
@@ -174,27 +166,18 @@ def compute_delta_classif_variance(
     X_val: np.ndarray,
     y_val: np.ndarray,
 ) -> float:
-    n = X_val.shape[0]
-    if n <= 1:
-        return 0.0
-
-    for i in range(n):
-        assert (y_val[i] == 1.0) or (y_val[i] == -1.0)
-
     s_t = X_val @ theta_t
     s_c = X_val @ theta_c
-
-    ell_t = _sigmoid_stable(-y_val * s_t)
-    ell_c = _sigmoid_stable(-y_val * s_c)
-
+    z_t = -y_val * s_t
+    z_c = -y_val * s_c
+    ell_t = _phi_vec(z_t)
+    ell_c = _phi_vec(z_c)
     d = ell_t - ell_c
     mean_d = np.mean(d)
-
     var_pop = np.mean(d * d) - mean_d * mean_d
     if var_pop < 0.0:
         var_pop = 0.0
-
-    return var_pop / (n - 1.0)
+    return var_pop / (X_val.shape[0] - 1.0)
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)

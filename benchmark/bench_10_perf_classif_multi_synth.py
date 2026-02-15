@@ -23,7 +23,7 @@ LBDA_DEFAULT = _CFG.LBDA_DEFAULT
 D = _CFG.D
 SIGMA = _CFG.SIGMA
 N_T = _CFG.N_T
-N_S = _CFG.N_TRAIN_SAMPLES
+N_S = _CFG.N_S
 JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
 CHUNK_SIZE = _CFG.CHUNK_SIZE
 START_PLOT = _CFG.START_PLOT
@@ -120,6 +120,28 @@ if __name__ == "__main__":
     ]
     secondary_axis = None
     uncertainty = False
+    plot_stats_evol(
+        results=[res["probit"] for res in results],
+        xlogscale=True,
+        ylogscale=False,
+        start=START_PLOT,
+        main_axis=main_axis,
+        secondary_axis=secondary_axis,
+        figsize=(3.75, 4.5),
+        uncertainty=uncertainty,
+        title=title,
+        xlabel=r"$n_T$",
+        lw=LW,
+        alpha=ALPHA,
+        fontsize=FONTSIZE,
+        markersize=MARKERSIZE,
+        ncols_legend=2,
+        legend_y_pad=1.35,
+        figures_dir=FIGURES_DIR,
+        filename="10_performance_classif_probit_multi_source",
+        filename_suffix=f"_eps_{args.eps:.1f}",
+        verbose=True,
+    )
     plot_stats_evol(
         results=[res["acc"] for res in results],
         xlogscale=True,

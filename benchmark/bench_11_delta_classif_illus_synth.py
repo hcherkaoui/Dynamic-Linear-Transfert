@@ -22,7 +22,7 @@ LBDA_DEFAULT = _CFG.LBDA_DEFAULT
 D = _CFG.D
 SIGMA = _CFG.SIGMA
 N_T = _CFG.N_T
-N_S = _CFG.N_TRAIN_SAMPLES
+N_S = _CFG.N_S
 JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
 
 
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         results=results,
         xlogscale=False,
         ylogscale=False,
-        main_axis=[r"$\hat{\Delta}$", r"$\Delta^{\mathrm{emp}}$"],
+        main_axis=[r"$\hat{\Delta}$", r"$\Delta^{\star}$"],
         main_axis_ref_line=0.0,
         figsize=(3.5, 3.2),
         uncertainty=True,

@@ -45,8 +45,8 @@ if __name__ == "__main__":
 
 ###############################################################################
 # Plotting
-    main_axis = [r"$\Delta^{\mathrm{emp}}$"]
-    secondary_axis = [r"$n^\star$"]
+    main_axis = [r"$\Delta^{\star}$"]
+    secondary_axis = [r"$\hat{n}$"]
     uncertainty = True
     title = r"$\sigma_T = \sigma_S = $" + f"{SIGMA:.2f}"
     plot_stats_evol(
@@ -57,7 +57,7 @@ if __name__ == "__main__":
         main_axis=main_axis,
         secondary_axis=secondary_axis,
         main_axis_ref_line=0.0,
-        figsize=(3.5, 3.2),
+        figsize=(3.5, 3.6),
         uncertainty=uncertainty,
         title=title,
         xlabel=r"$\varepsilon$",

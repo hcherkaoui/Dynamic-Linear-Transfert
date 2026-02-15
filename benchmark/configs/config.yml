@@ -6,18 +6,18 @@ plotting:
   markersize: 10                      # Marker size for points
 
 launcher:
-  n_jobs: 7                           # Number of parallel jobs
-  n_runs: 7                           # Number of Monte Carlo runs
+  n_jobs: 25                          # Number of parallel jobs
+  n_runs: 250                         # Number of Monte Carlo runs
   joblib_verbose: 10                  # Joblib verbosity level
   seed: 4578902                       # Global RNG seed
   l_datasets: [email, boston]         # Real datasets to benchmark
-  l_eps_classif_mono: [8, 4, 0]       # Classif mono-source eps values
+  l_eps_classif_mono: [8, 4, 0.2, 0]  # Classif mono-source eps values
   l_eps_classif_multi: [10, 20]       # Classif multi-sources eps values
-  l_eps_regr_mono: [0.8, 0.2, 0]      # Regr mono-source eps values
+  l_eps_regr_mono: [1, 0.8, 0.2, 0]   # Regr mono-source eps values
   l_eps_regr_multi: [1, 5]            # Regr multi-sources eps values
 
 model:
-  alpha: 0.001                        # LCB parameter
+  alpha: 0.01                        # LCB parameter
 
 bench:
   chunk_size: 10                      # Chunk size for dynamic augmentation

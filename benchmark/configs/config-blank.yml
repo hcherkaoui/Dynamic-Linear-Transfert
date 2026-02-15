@@ -17,7 +17,7 @@ launcher:
   l_eps_regr_multi: [1]               # Regr multi-sources eps values
 
 model:
-  alpha: 0.001                        # LCB parameter
+  alpha: 0.01                        # LCB parameter
 
 bench:
   chunk_size: 10                      # Chunk size for dynamic augmentation

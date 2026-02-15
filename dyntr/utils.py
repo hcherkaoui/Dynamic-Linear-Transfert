@@ -38,35 +38,6 @@ def format_duration(seconds: float) -> str:
     return f"{h:02d}h {m:02d}m {s:02d}s {int(1000.0 * ns):03d}ms"
 
 
-def print_dataset_info(
-    X_t,
-    y_t,
-    X_s,
-    y_s,
-    X_t_val,
-    X_t_test,
-    theta_t,
-    sigma_t,
-    sigma_s,
-) -> None:
-    """Helper to print dataset statistics."""
-    print(
-        "[INFO] Dataset statistics:\n"
-        f"       d = {X_t.shape[1]}\n"
-        f"       n_t = {len(X_t)}\n"
-        f"       n_s = {len(X_s)}\n"
-        f"       sigma_t = {sigma_t:.2e}\n"
-        f"       sigma_s = {sigma_s:.2e}\n"
-        f"       X_t shape = {X_t.shape}, y_t shape = {y_t.shape}\n"
-        f"       X_s shape = {X_s.shape}, y_s shape = {y_s.shape}\n"
-        f"       X_t_val shape = {X_t_val.shape}\n"
-        f"       X_t_test shape = {X_t_test.shape}\n"
-        f"       cond(X_t^T X_t)  =  {np.linalg.cond(X_t.T @ X_t):.2e}\n"
-        f"       cond(X_s^T X_s)  =  {np.linalg.cond(X_s.T @ X_s):.2e}\n"
-        f"       ||theta_t||^2    =  {np.linalg.norm(theta_t):.2e}\n"
-    )
-
-
 @numba.jit(nopython=True, cache=True, fastmath=True)
 def std_estimation(
     theta: np.ndarray,

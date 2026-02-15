@@ -5,7 +5,7 @@ import time
 import numpy as np
 from joblib import Parallel, delayed
 from dyntr.datasets import real_regr_data
-from dyntr.utils import compute_exp_vars, format_duration, print_dataset_info, set_random_state
+from dyntr.utils import compute_exp_vars, format_duration, set_random_state
 from experiments import run_one_regr_perf_cmp, get_config
 from plotting import plot_stats_evol
 
@@ -22,7 +22,7 @@ FIGURES_DIR = _CFG.FIGURES_DIR
 SEED = _CFG.SEED
 LBDA_DEFAULT = _CFG.LBDA_DEFAULT
 N_T = _CFG.N_T
-N_S = _CFG.N_TRAIN_SAMPLES
+N_S = _CFG.N_S
 JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
 CHUNK_SIZE = _CFG.CHUNK_SIZE
 STANDARDIZE_REAL = _CFG.STANDARDIZE_REAL
@@ -56,7 +56,7 @@ if __name__ == "__main__":
         standardize=STANDARDIZE_REAL,
     )
 
-    X_t, y_t = data["target_train"]
+    X_t_train, y_t_train = data["target_train"]
     X_t_val, y_t_val = data["target_val"]
     X_t_test, y_t_test = data["target_test"]
     l_X_s, l_y_s = data["source_train"]
@@ -65,9 +65,9 @@ if __name__ == "__main__":
     y_s = np.concatenate(l_y_s)
 
     exp_vars = compute_exp_vars(
-        X_t=X_t,
+        X_t=X_t_train,
         X_s=X_s,
-        y_t=y_t,
+        y_t=y_t_train,
         y_s=y_s,
         X_t_val=X_t_val,
         y_t_val=y_t_val,
@@ -78,19 +78,20 @@ if __name__ == "__main__":
     sigma_t = exp_vars["sigma_t"]
     sigma_s = exp_vars["sigma_s"]
 
+    n_t = data["meta"]["n_t_train"]
+
     print("[INFO] Running optimal sample sharing experiment...")
-    print_dataset_info(X_t, y_t, X_s, y_s, X_t_val, X_t_test, theta_t, sigma_t, sigma_s)
 
 ###############################################################################
 # Main
     delayed_runs = []
     for r in range(N_RUNS):
         kwargs = dict(
-            n_samples_target=N_T,
+            n_samples_target=n_t,
             theta_t=theta_t,
             theta_s=theta_s,
-            X_t_train=X_t,
-            y_t_train=y_t,
+            X_t_train=X_t_train,
+            y_t_train=y_t_train,
             X_t_val=X_t_val,
             y_t_val=y_t_val,
             X_t_test=X_t_test,

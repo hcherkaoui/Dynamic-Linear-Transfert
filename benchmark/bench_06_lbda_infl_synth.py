@@ -5,7 +5,7 @@ import time
 import numpy as np
 from joblib import Parallel, delayed
 from dyntr.datasets import synth_regr_data
-from dyntr.utils import format_duration, print_dataset_info, set_random_state
+from dyntr.utils import format_duration, set_random_state
 from experiments import run_one_lbda_infl, get_config
 from plotting import plot_stats_evol
 
@@ -24,7 +24,7 @@ D = _CFG.D
 SIGMA = _CFG.SIGMA
 EPS = _CFG.EPS
 N_T = _CFG.N_T
-N_S = _CFG.N_TRAIN_SAMPLES
+N_S = _CFG.N_S
 JOBLIB_VERBOSE = _CFG.JOBLIB_VERBOSE
 
 t0 = time.time()
@@ -67,7 +67,6 @@ if __name__ == "__main__":
     theta_s = data["meta"]["theta_s"]
 
     print("[INFO] Running optimal sample sharing experiment...")
-    print_dataset_info(X_t, y_t, X_s, y_s, X_t_val, X_t_test, theta_t, sigma_t, sigma_s)
 
 ###############################################################################
 # Main
@@ -96,8 +95,8 @@ if __name__ == "__main__":
 
 ###############################################################################
 # Plotting
-    main_axis = [r"$\Delta^{\mathrm{emp}}$"]
-    secondary_axis = [r"$n^\star$"]
+    main_axis = [r"$\Delta^{\star}$"]
+    secondary_axis = [r"$\hat{n}$"]
     uncertainty = True
     title = ""
     plot_stats_evol(
@@ -108,7 +107,7 @@ if __name__ == "__main__":
         main_axis=main_axis,
         secondary_axis=secondary_axis,
         main_axis_ref_line=0.0,
-        figsize=(3.5, 3.2),
+        figsize=(3.5, 3.6),
         uncertainty=uncertainty,
         title=title,
         xlabel=r"$\lambda_S$",
