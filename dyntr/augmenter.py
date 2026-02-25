@@ -6,7 +6,11 @@ from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_is_fitted
-from .linear import compute_delta_regr_lower_bound
+from .linear import (
+    _phi_vec,
+    compute_delta_classif_lower_bound,
+    compute_delta_regr_lower_bound,
+)
 from .utils import _check_X, _check_Xy, std_estimation
 
 
@@ -199,6 +203,28 @@ def _oracle_score_update_batch(
 
 
 @numba.njit(cache=True, fastmath=True)
+def _oracle_score_update_batch_classif(
+    Kc: np.ndarray,
+    b: np.ndarray,
+    X_b: np.ndarray,
+    y_b: np.ndarray,
+    X_t_val: np.ndarray,
+    theta_t_true: np.ndarray,
+    base_err: float,
+) -> tuple[float, np.ndarray, np.ndarray]:
+    Kc = _woodbury_update(Kc, X_b)
+    b = b + X_b.T @ y_b
+    theta = Kc @ b
+    m = X_t_val @ theta
+    sgn = np.sign(m)
+    a_true = X_t_val @ theta_t_true
+    z = -sgn * a_true
+    err = float(np.sum(_phi_vec(z)))
+    delta = base_err - err
+    return delta, Kc, b
+
+
+@numba.njit(cache=True, fastmath=True)
 def _sample_score_update_batch(
     G_s: np.ndarray,
     b_s: np.ndarray,
@@ -237,6 +263,31 @@ def _sample_score_update_batch(
         alpha=alpha,
     )
     return float(delta), G_s, b_s, A_s_inv, A_c_inv
+
+
+def _sample_score_update_batch_classif(
+    b_t: np.ndarray,
+    b_s: np.ndarray,
+    A_c_inv: np.ndarray,
+    X_b: np.ndarray,
+    y_b: np.ndarray,
+    theta_t: np.ndarray,
+    X_t_val: np.ndarray,
+    y_t_val: np.ndarray,
+    alpha: float,
+) -> tuple[float, np.ndarray, np.ndarray]:
+    b_s = b_s + X_b.T @ y_b
+    A_c_inv = _woodbury_update(A_c_inv, X_b)
+    theta_c = A_c_inv @ (b_t + b_s)
+    classif_lb = getattr(compute_delta_classif_lower_bound, "py_func", compute_delta_classif_lower_bound)
+    delta = classif_lb(
+        theta_t=theta_t,
+        theta_c=theta_c,
+        X_val=X_t_val,
+        y_val=y_t_val,
+        alpha=alpha,
+    )
+    return float(delta), b_s, A_c_inv
 
 
 def select_multi_source(
@@ -402,6 +453,22 @@ class _BaseSampleAugmenter(_AugmenterBase):
 class OracleSampleAugmenter(_BaseSampleAugmenter):
     """Multi-source augmentation using oracle Δ_emp (requires θ_t^*)."""
 
+    def __init__(
+        self,
+        n_max=N_MAX,
+        strategy="greedy",
+        chunk_size=1,
+        random_state=None,
+        criterion: str = "regr",
+    ):
+        super().__init__(
+            n_max=n_max,
+            strategy=strategy,
+            chunk_size=chunk_size,
+            random_state=random_state,
+        )
+        self.criterion = criterion
+
     def fit(
         self,
         X: ArrayLike,
@@ -415,6 +482,9 @@ class OracleSampleAugmenter(_BaseSampleAugmenter):
         X_t_val = _check_X(X_t_val, n_features=d)
 
         self._validate()
+        criterion = str(self.criterion)
+        if criterion not in {"regr", "classif"}:
+            raise ValueError("criterion must be in {'regr','classif'}.")
 
         theta_t_true = np.asarray(theta_t_true, float).reshape(-1)
         if theta_t_true.shape[0] != d:
@@ -433,6 +503,7 @@ class OracleSampleAugmenter(_BaseSampleAugmenter):
         self.b_t_ = b_t
         self.theta_t_hat_ = theta_t_hat
         self.theta_t_true_ = theta_t_true
+        self.criterion_ = criterion
 
         return self
 
@@ -442,7 +513,7 @@ class OracleSampleAugmenter(_BaseSampleAugmenter):
         l_y: Sequence[ArrayLike],
         lbda: float,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        check_is_fitted(self, ("X_t_", "G_t_", "b_t_", "theta_t_true_", "_rng_"))
+        check_is_fitted(self, ("X_t_", "G_t_", "b_t_", "theta_t_true_", "_rng_", "criterion_"))
         Xs, ys = _prepare_sources(self._rng_, l_X, l_y, self.n_features_)
         total = sum(X.shape[0] for X in Xs)
         n_rounds = min(int(self.n_max), int(total))
@@ -452,20 +523,38 @@ class OracleSampleAugmenter(_BaseSampleAugmenter):
         eye = np.eye(self.n_features_)
         Kc0 = np.linalg.inv(self.G_t_ + float(lbda) * eye)
         b0 = self.b_t_.copy()
-        v0 = self.X_t_val_ @ (self.theta_t_hat_ - self.theta_t_true_)
-        base_err = float(v0 @ v0)
+        if self.criterion_ == "regr":
+            v0 = self.X_t_val_ @ (self.theta_t_hat_ - self.theta_t_true_)
+            base_err = float(v0 @ v0)
+        else:
+            m0 = self.X_t_val_ @ self.theta_t_hat_
+            sgn0 = np.sign(m0)
+            a_true0 = self.X_t_val_ @ self.theta_t_true_
+            z0 = -sgn0 * a_true0
+            base_err = float(np.sum(_phi_vec(z0)))
 
         def score_and_update_batch(state, X_b: np.ndarray, y_b: np.ndarray):
             Kc, b = state
-            delta, Kc, b = _oracle_score_update_batch(
-                Kc,
-                b,
-                X_b,
-                y_b,
-                self.X_t_val_,
-                self.theta_t_true_,
-                base_err,
-            )
+            if self.criterion_ == "regr":
+                delta, Kc, b = _oracle_score_update_batch(
+                    Kc,
+                    b,
+                    X_b,
+                    y_b,
+                    self.X_t_val_,
+                    self.theta_t_true_,
+                    base_err,
+                )
+            else:
+                delta, Kc, b = _oracle_score_update_batch_classif(
+                    Kc,
+                    b,
+                    X_b,
+                    y_b,
+                    self.X_t_val_,
+                    self.theta_t_true_,
+                    base_err,
+                )
             return float(delta), (Kc, b)
 
         deltas, sel_src, X_seq, y_seq, chunk_sizes = self._run_selection(
@@ -481,7 +570,15 @@ class OracleSampleAugmenter(_BaseSampleAugmenter):
 class SampleAugmenter(_BaseSampleAugmenter):
     """Multi-source augmentation using Δ lower bound maximization."""
 
-    def __init__(self, n_max=N_MAX, alpha=0.05, strategy="greedy", chunk_size=5, random_state=None):
+    def __init__(
+        self,
+        n_max=N_MAX,
+        alpha=0.05,
+        strategy="greedy",
+        chunk_size=5,
+        random_state=None,
+        criterion: str = "regr",
+    ):
         super().__init__(
             n_max=n_max,
             strategy=strategy,
@@ -489,6 +586,7 @@ class SampleAugmenter(_BaseSampleAugmenter):
             random_state=random_state,
         )
         self.alpha = alpha
+        self.criterion = criterion
 
     def fit(
         self,
@@ -497,12 +595,16 @@ class SampleAugmenter(_BaseSampleAugmenter):
         X_t_val: ArrayLike,
         lbda: float,
         sigma: float | None = None,
+        y_t_val: ArrayLike | None = None,
     ) -> "SampleAugmenter":
         X_t, y_t = _check_Xy(X, y)
         d = X_t.shape[1]
         X_t_val = _check_X(X_t_val, n_features=d)
 
         self._validate()
+        criterion = str(self.criterion)
+        if criterion not in {"regr", "classif"}:
+            raise ValueError("criterion must be in {'regr','classif'}.")
 
         G_t, b_t, A_t_inv, theta_t = _ridge_stats(X_t, y_t, float(lbda))
         sigma_t = float(sigma) if sigma is not None else _estimate_sigma(X_t, y_t, float(lbda))
@@ -519,6 +621,14 @@ class SampleAugmenter(_BaseSampleAugmenter):
         self.b_t_ = b_t
         self.A_t_inv_ = A_t_inv
         self.theta_t_ = theta_t
+        self.criterion_ = criterion
+        if criterion == "classif":
+            if y_t_val is None:
+                raise ValueError("y_t_val is required when criterion='classif'.")
+            y_t_val = np.asarray(y_t_val, dtype=float).reshape(-1)
+            if y_t_val.shape[0] != X_t_val.shape[0]:
+                raise ValueError("y_t_val must have the same length as X_t_val.")
+            self.y_t_val_ = y_t_val
 
         return self
 
@@ -529,7 +639,7 @@ class SampleAugmenter(_BaseSampleAugmenter):
         lbda: float,
         sigma: float | None = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        check_is_fitted(self, ("X_t_", "G_t_", "b_t_", "A_t_inv_", "theta_t_", "_rng_"))
+        check_is_fitted(self, ("X_t_", "G_t_", "b_t_", "A_t_inv_", "theta_t_", "_rng_", "criterion_"))
         Xs, ys = _prepare_sources(self._rng_, l_X, l_y, self.n_features_)
         total = sum(X.shape[0] for X in Xs)
         n_rounds = min(int(self.n_max), int(total))
@@ -541,36 +651,59 @@ class SampleAugmenter(_BaseSampleAugmenter):
         eye = np.eye(self.n_features_)
         G_s0 = np.zeros((self.n_features_, self.n_features_), dtype=float)
         b_s0 = np.zeros((self.n_features_,), dtype=float)
-        A_s_inv0 = np.linalg.inv(G_s0 + float(lbda) * eye)
         A_c_inv0 = np.linalg.inv(self.G_t_ + float(lbda + self.lbda_t_) * eye)
 
-        def score_and_update_batch(state, X_b: np.ndarray, y_b: np.ndarray):
-            G_s, b_s, A_s_inv, A_c_inv = state
-            delta, G_s, b_s, A_s_inv, A_c_inv = _sample_score_update_batch(
-                G_s,
-                b_s,
-                A_s_inv,
-                A_c_inv,
-                X_b,
-                y_b,
-                self.theta_t_,
-                self.G_t_,
-                self.A_t_inv_,
-                self.X_t_val_,
-                self.sigma_t_,
-                sigma_s,
-                self.lbda_t_,
-                float(lbda),
-                self.alpha_,
-            )
-            return float(delta), (G_s, b_s, A_s_inv, A_c_inv)
+        if self.criterion_ == "regr":
+            A_s_inv0 = np.linalg.inv(G_s0 + float(lbda) * eye)
+
+            def score_and_update_batch(state, X_b: np.ndarray, y_b: np.ndarray):
+                G_s, b_s, A_s_inv, A_c_inv = state
+                delta, G_s, b_s, A_s_inv, A_c_inv = _sample_score_update_batch(
+                    G_s,
+                    b_s,
+                    A_s_inv,
+                    A_c_inv,
+                    X_b,
+                    y_b,
+                    self.theta_t_,
+                    self.G_t_,
+                    self.A_t_inv_,
+                    self.X_t_val_,
+                    self.sigma_t_,
+                    sigma_s,
+                    self.lbda_t_,
+                    float(lbda),
+                    self.alpha_,
+                )
+                return float(delta), (G_s, b_s, A_s_inv, A_c_inv)
+
+            init_state = (G_s0, b_s0, A_s_inv0, A_c_inv0)
+        else:
+            check_is_fitted(self, ("y_t_val_",))
+
+            def score_and_update_batch(state, X_b: np.ndarray, y_b: np.ndarray):
+                b_s, A_c_inv = state
+                delta, b_s, A_c_inv = _sample_score_update_batch_classif(
+                    self.b_t_,
+                    b_s,
+                    A_c_inv,
+                    X_b,
+                    y_b,
+                    self.theta_t_,
+                    self.X_t_val_,
+                    self.y_t_val_,
+                    self.alpha_,
+                )
+                return float(delta), (b_s, A_c_inv)
+
+            init_state = (b_s0, A_c_inv0)
 
         deltas, sel_src, X_seq, y_seq, chunk_sizes = self._run_selection(
             Xs=Xs,
             ys=ys,
             n_rounds=n_rounds,
             score_and_update_batch=score_and_update_batch,
-            init_state=(G_s0, b_s0, A_s_inv0, A_c_inv0),
+            init_state=init_state,
         )
         return self._finalize_selection(deltas, sel_src, X_seq, y_seq, chunk_sizes)
 

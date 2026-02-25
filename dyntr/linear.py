@@ -150,6 +150,8 @@ def compute_delta_classif(
     X_val: np.ndarray,
     y_val: np.ndarray,
 ) -> float:
+    if X_val.shape[0] == 0:
+        return 0.0
     s_t = X_val @ theta_t
     s_c = X_val @ theta_c
     z_t = -y_val * s_t
@@ -166,6 +168,9 @@ def compute_delta_classif_variance(
     X_val: np.ndarray,
     y_val: np.ndarray,
 ) -> float:
+    n = X_val.shape[0]
+    if n <= 1:
+        return 0.0
     s_t = X_val @ theta_t
     s_c = X_val @ theta_c
     z_t = -y_val * s_t
@@ -177,7 +182,7 @@ def compute_delta_classif_variance(
     var_pop = np.mean(d * d) - mean_d * mean_d
     if var_pop < 0.0:
         var_pop = 0.0
-    return var_pop / (X_val.shape[0] - 1.0)
+    return var_pop / (n - 1.0)
 
 
 @numba.jit(nopython=True, cache=True, fastmath=True)
@@ -464,6 +469,8 @@ def regr(
     mode: str = "target",
     chunk_size: int = 5,
     n_max: int | None = None,
+    criterion: str = "regr",
+    y_t_val: np.ndarray | None = None,
 ) -> Tuple[np.ndarray, int, int]:
     """Dispatch function modes and return (theta, n_t, n_s)."""
 
@@ -497,8 +504,14 @@ def regr(
         assert strategy in ["uniform", "greedy"], f"Unknown strategy type, got {strategy}"
 
         # our proposed approach
-        aug = SampleAugmenter(alpha=alpha, strategy=strategy, chunk_size=chunk_size, n_max=n_max)
-        aug = aug.fit(X_t_train, y_t_train, X_t_val, lbda=lbda_t, sigma=sigma_t)
+        aug = SampleAugmenter(
+            alpha=alpha,
+            strategy=strategy,
+            chunk_size=chunk_size,
+            n_max=n_max,
+            criterion=criterion,
+        )
+        aug = aug.fit(X_t_train, y_t_train, X_t_val, lbda=lbda_t, sigma=sigma_t, y_t_val=y_t_val)
         X_c, y_c = aug.transform(l_X_s, l_y_s, sigma=sigma_s, lbda=lbda_s)
 
         return _ridge(X_c, y_c, lbda_t + lbda_s), len(X_t_train), int(aug.get_n_selected())
@@ -510,7 +523,12 @@ def regr(
         assert strategy in ["uniform", "greedy"], f"Unknown strategy type, got {strategy}"
 
         # our proposed oracle approach
-        ora = OracleSampleAugmenter(strategy=strategy, chunk_size=chunk_size, n_max=n_max)
+        ora = OracleSampleAugmenter(
+            strategy=strategy,
+            chunk_size=chunk_size,
+            n_max=n_max,
+            criterion=criterion,
+        )
         ora = ora.fit(X_t_train, y_t_train, X_t_val, lbda=lbda_t, theta_t_true=theta_t)
         X_c, y_c = ora.transform(l_X_s, l_y_s, lbda=lbda_t + lbda_s)
 
@@ -606,14 +624,19 @@ def classif(
     mode: str = "target",
     chunk_size: int = 5,
     n_max: int | None = None,
+    y_t_val: np.ndarray | None = None,
 ) -> Tuple[np.ndarray, int, int]:
     """Dispatch function modes and return (theta, n_t, n_s)."""
+
+    if y_t_val is None:
+        y_t_val = np.where(X_t_val @ theta_t >= 0.0, 1.0, -1.0)
 
     kwargs = dict(
         theta_t=theta_t, X_t_train=X_t_train, y_t_train=y_t_train,
         X_t_val=X_t_val, l_X_s=l_X_s, l_y_s=l_y_s, sigma_t=sigma_t,
         sigma_s=sigma_s, lbda_t=lbda_t, lbda_s=lbda_s, alpha=alpha,
-        mode=mode, chunk_size=chunk_size, n_max=n_max,
+        mode=mode, chunk_size=chunk_size, n_max=n_max, criterion="classif",
+        y_t_val=y_t_val,
     )
 
     if mode in ['chen_et_al', 'obst_et_al', 'zhang_et_al']:
@@ -642,10 +665,10 @@ source_classif = partial(classif, mode="source")
 full_classif = partial(classif, mode="full")
 hier_classif = partial(classif, mode="hierarchical")
 
-dyn_greedy_classif = partial(regr, mode="dynamic-greedy")
-dyn_uniform_classif = partial(regr, mode="dynamic-uniform")
-oracle_greedy_classif = partial(regr, mode="oracle-greedy")
-oracle_uniform_classif = partial(regr, mode="oracle-uniform")
+dyn_greedy_classif = partial(classif, mode="dynamic-greedy")
+dyn_uniform_classif = partial(classif, mode="dynamic-uniform")
+oracle_greedy_classif = partial(classif, mode="oracle-greedy")
+oracle_uniform_classif = partial(classif, mode="oracle-uniform")
 
 target_regr.__doc__ = _DOC
 source_regr.__doc__ = _DOC

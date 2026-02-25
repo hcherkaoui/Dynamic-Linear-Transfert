@@ -9,6 +9,7 @@ from dyntr.augmenter import (
     _BaseSampleAugmenter,
     _estimate_sigma,
     _oracle_score_update_batch,
+    _oracle_score_update_batch_classif,
     _permute,
     _prepare_sources,
     _woodbury_update,
@@ -39,6 +40,29 @@ def test_greedy_sample_augmenter_fit_transform():
     assert Xc.shape[0] == yc.shape[0]
     assert Xc.shape[1] == X_t.shape[1]
     assert aug.get_n_selected() >= 0
+
+
+def test_classif_sample_augmenter_fit_transform():
+    rng = np.random.default_rng(10)
+    X_t, _, X_s, _, X_t_val, _ = _make_data(rng)
+    y_t = np.where(X_t[:, 0] >= 0.0, 1.0, -1.0)
+    y_s = np.where(X_s[:, 0] >= 0.0, 1.0, -1.0)
+    y_t_val = np.where(X_t_val[:, 0] >= 0.0, 1.0, -1.0)
+    aug = SampleAugmenter(n_max=10, alpha=0.1, criterion="classif", random_state=0)
+    aug.fit(X_t, y_t, X_t_val, lbda=1.0, sigma=0.1, y_t_val=y_t_val)
+    Xc, yc = aug.transform([X_s], [y_s], lbda=0.5, sigma=0.2)
+    assert Xc.shape[0] == yc.shape[0]
+    assert Xc.shape[1] == X_t.shape[1]
+    assert aug.get_n_selected() >= 0
+
+
+def test_classif_sample_augmenter_requires_y_t_val():
+    rng = np.random.default_rng(11)
+    X_t, _, _, _, X_t_val, _ = _make_data(rng)
+    y_t = np.where(X_t[:, 0] >= 0.0, 1.0, -1.0)
+    aug = SampleAugmenter(n_max=10, alpha=0.1, criterion="classif", random_state=0)
+    with pytest.raises(ValueError):
+        aug.fit(X_t, y_t, X_t_val, lbda=1.0, sigma=0.1)
 
 
 def test_greedy_sample_augmenter_bad_shapes():
@@ -150,6 +174,19 @@ def test_woodbury_and_oracle_batch():
     theta_t_true = np.array([0.5, 0.0])
     base_err = 1.0
     delta, Kc_new, b_new = _oracle_score_update_batch(
+        A_inv,
+        np.zeros(2),
+        X_b,
+        y_b,
+        X_t_val,
+        theta_t_true,
+        base_err,
+    )
+    assert isinstance(delta, float)
+    assert Kc_new.shape == (2, 2)
+    assert b_new.shape == (2,)
+
+    delta, Kc_new, b_new = _oracle_score_update_batch_classif(
         A_inv,
         np.zeros(2),
         X_b,
