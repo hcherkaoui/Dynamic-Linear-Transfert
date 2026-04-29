@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any, Dict
 import numpy as np
 from ._datasets import _assert_is_regression, _condition_blocks, _bootstrap_sources, _generate_thetas
-from ._datasets import _load_boston_dataset, _load_hillstrom_dataset
+from ._datasets import CHEMBERTA_EMBEDDING_DATASETS, _load_boston_dataset, _load_hillstrom_dataset
+from ._datasets import _load_chemberta_embedding_dataset
 
 
 def synth_regr_data(
@@ -213,7 +214,8 @@ def real_regr_data(
     Parameters
     ----------
     dataset_name : str
-        Dataset identifier ("boston" or "email").
+        Dataset identifier ("boston", "email", "lipophilicity_chemberta",
+        or "aqsoldb_chemberta").
     n_t_train, n_t_val, n_t_test
         Number of target samples for train/val/test.
     n_s_train, n_s_val, n_s_test
@@ -243,7 +245,7 @@ def real_regr_data(
             - 'source_test' : tuple
             - 'meta' : dict
     """
-    valid_names = {"boston", "email"}
+    valid_names = {"boston", "email"} | set(CHEMBERTA_EMBEDDING_DATASETS)
     if dataset_name not in valid_names:
         raise ValueError(
             f"Dataset '{dataset_name}' is not supported. "
@@ -253,9 +255,15 @@ def real_regr_data(
     if dataset_name == "boston":
         train_data, test_data = _load_boston_dataset()
         add_intercept = True
+        pca_var_threshold = 0.75
     elif dataset_name == "email":
         train_data, test_data = _load_hillstrom_dataset()
         add_intercept = True
+        pca_var_threshold = 0.75
+    elif dataset_name in CHEMBERTA_EMBEDDING_DATASETS:
+        train_data, test_data = _load_chemberta_embedding_dataset(dataset_name)
+        add_intercept = False
+        pca_var_threshold = None
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
 
@@ -304,7 +312,7 @@ def real_regr_data(
         X_t_valtest,
         X_s_valtest,
         standardize=standardize,
-        pca_var_threshold=0.75,
+        pca_var_threshold=pca_var_threshold,
         var_threshold=var_threshold,
         add_intercept=add_intercept,
     )

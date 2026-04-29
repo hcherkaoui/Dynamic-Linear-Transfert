@@ -10,7 +10,8 @@ launcher:
   n_runs: 250                         # Number of Monte Carlo runs
   joblib_verbose: 10                  # Joblib verbosity level
   seed: 4578902                       # Global RNG seed
-  l_datasets: [email, boston]         # Real datasets to benchmark
+  # l_datasets: [email, boston]       # Previous real datasets
+  l_datasets: [lipophilicity_chemberta, aqsoldb_chemberta]  # Real embedding datasets
   l_eps_classif_mono: [8, 4, 0.2, 0]  # Classif mono-source eps values
   l_eps_classif_multi: [10, 20]       # Classif multi-sources eps values
   l_eps_regr_mono: [1, 0.8, 0.2, 0]   # Regr mono-source eps values

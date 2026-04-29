@@ -11,6 +11,29 @@ from ..utils import check_random_state
 
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
+CHEMBERTA_EMBEDDING_DATASETS = {
+    "lipophilicity_chemberta": {
+        "filename": "lipophilicity_chemberta.npz",
+        "n_samples": 4200,
+        "d": 768,
+        "target": "logD",
+    },
+    "aqsoldb_chemberta": {
+        "filename": "aqsoldb_chemberta.npz",
+        "n_samples": 9982,
+        "d": 768,
+        "target": "LogS",
+    },
+}
+
+
+def _default_data_dir() -> str:
+    data_dir = os.environ.get("DYNTR_DATA_DIR")
+    if data_dir:
+        return data_dir
+
+    return os.path.join(DATA_DIR, "data")
+
 
 def _generate_thetas(
     d: int,
@@ -239,6 +262,92 @@ def _load_hillstrom_dataset(
 
     train_data = (X1_train, y1_train), (X2_train, y2_train)
     test_data = (X1_test, y1_test), (X2_test, y2_test)
+    return train_data, test_data
+
+
+def _load_chemberta_embedding_dataset(
+    dataset_name: str,
+    data_dir=None,
+):
+    """
+    Load a molecular-regression dataset from precomputed ChemBERTa embeddings.
+
+    The npz file is expected under ``DYNTR_DATA_DIR`` when set, otherwise under
+    the bundled ``dyntr/datasets/data`` directory. It must contain keys:
+    ``X_target_train``, ``y_target_train``, ``X_source_train``,
+    ``y_source_train``, ``X_target_test``, ``y_target_test``,
+    ``X_source_test``, and ``y_source_test``.
+
+    Returns
+    -------
+    train_data : tuple
+        ((X_target_train, y_target_train), (X_source_train, y_source_train))
+    test_data : tuple
+        ((X_target_test, y_target_test), (X_source_test, y_source_test))
+    """
+    if dataset_name not in CHEMBERTA_EMBEDDING_DATASETS:
+        raise ValueError(
+            f"Unknown ChemBERTa embedding dataset '{dataset_name}'. "
+            f"Valid values: {sorted(CHEMBERTA_EMBEDDING_DATASETS)}"
+        )
+
+    spec = CHEMBERTA_EMBEDDING_DATASETS[dataset_name]
+    data_dir = _default_data_dir() if data_dir is None else data_dir
+    path = os.path.join(data_dir, dataset_name, spec["filename"])
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Precomputed embeddings not found at {path}. "
+            "Ship the corresponding npz file under dyntr/datasets/data, "
+            "or set DYNTR_DATA_DIR to the directory containing the dataset folders."
+        )
+
+    required = (
+        "X_target_train",
+        "y_target_train",
+        "X_source_train",
+        "y_source_train",
+        "X_target_test",
+        "y_target_test",
+        "X_source_test",
+        "y_source_test",
+    )
+    with np.load(path, allow_pickle=False) as cache:
+        missing = [key for key in required if key not in cache]
+        if missing:
+            raise ValueError(f"Embedding cache {path} is missing keys: {missing}")
+
+        arrays = {key: np.asarray(cache[key]) for key in required}
+
+    for prefix in ("target_train", "source_train", "target_test", "source_test"):
+        X = np.asarray(arrays[f"X_{prefix}"], dtype=np.float64)
+        y = np.asarray(arrays[f"y_{prefix}"], dtype=np.float64).reshape(-1)
+        if X.ndim != 2:
+            raise ValueError(f"X_{prefix} must be a 2D matrix, got shape {X.shape}.")
+        if y.ndim != 1:
+            raise ValueError(f"y_{prefix} must be a 1D vector, got shape {y.shape}.")
+        if X.shape[0] != y.shape[0]:
+            raise ValueError(
+                f"X_{prefix} and y_{prefix} have incompatible lengths: "
+                f"{X.shape[0]} and {y.shape[0]}."
+            )
+        if X.shape[1] != spec["d"]:
+            raise ValueError(
+                f"X_{prefix} must have ChemBERTa dimension {spec['d']}, "
+                f"got {X.shape[1]}."
+            )
+        if not np.isfinite(X).all() or not np.isfinite(y).all():
+            raise ValueError(f"X_{prefix} and y_{prefix} must contain finite values.")
+        arrays[f"X_{prefix}"] = np.ascontiguousarray(X, dtype=np.float64)
+        arrays[f"y_{prefix}"] = np.ascontiguousarray(y, dtype=np.float64)
+
+    train_data = (
+        (arrays["X_target_train"], arrays["y_target_train"]),
+        (arrays["X_source_train"], arrays["y_source_train"]),
+    )
+    test_data = (
+        (arrays["X_target_test"], arrays["y_target_test"]),
+        (arrays["X_source_test"], arrays["y_source_test"]),
+    )
     return train_data, test_data
 
 

@@ -26,7 +26,10 @@ cifar/
 data/
 _data/
 stl10/
-dyntr/datasets/data/
+!dyntr/datasets/data/
+dyntr/datasets/data/*
+!dyntr/datasets/data/*_chemberta/
+!dyntr/datasets/data/*_chemberta/*.npz
 
 # ignore compiled dirs
 build/

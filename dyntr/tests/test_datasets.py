@@ -9,9 +9,11 @@ from dyntr.datasets._datasets import (
     _assert_is_regression,
     _autodetect_user_id,
     _condition_blocks,
+    _default_data_dir,
     _generate_thetas,
     _guess_column,
     _load_boston_dataset,
+    _load_chemberta_embedding_dataset,
     _load_hillstrom_dataset,
 )
 
@@ -210,6 +212,92 @@ def test_fetch_real_datasets_mocked(monkeypatch):
     )
     assert out["target_val"][0].shape[0] == 0
     assert out["source_val"][0][0].shape[0] == 0
+
+
+def test_fetch_real_chemberta_embedding_dataset_mocked(monkeypatch):
+    rng = np.random.default_rng(0)
+    X_t = rng.normal(size=(6, 768))
+    y_t = np.linspace(0.1, 0.6, 6)
+    X_s = rng.normal(size=(7, 768))
+    y_s = np.linspace(1.0, 1.6, 7)
+    train_data = (X_t[:5], y_t[:5]), (X_s[:6], y_s[:6])
+    test_data = (X_t[5:], y_t[5:]), (X_s[6:], y_s[6:])
+    monkeypatch.setattr(
+        datasets_mod,
+        "_load_chemberta_embedding_dataset",
+        lambda _dataset_name: (train_data, test_data),
+    )
+
+    out = datasets_mod.real_regr_data(
+        "lipophilicity_chemberta",
+        n_t_train=3,
+        n_t_val=1,
+        n_t_test=1,
+        n_s_train=3,
+        n_s_val=1,
+        n_s_test=1,
+        n_sources=1,
+        permutation=False,
+        standardize=True,
+        sigma_t=0.0,
+        sigma_s=0.0,
+    )
+
+    assert out["meta"]["dataset"] == "lipophilicity_chemberta"
+    assert out["target_train"][0].shape == (3, 768)
+    assert out["target_val"][0].shape == (1, 768)
+    assert out["target_test"][0].shape == (1, 768)
+    assert out["source_train"][0][0].shape == (3, 768)
+
+
+def test_load_chemberta_embedding_dataset_from_cache(tmp_path):
+    data_dir = tmp_path / "data"
+    cache_dir = data_dir / "aqsoldb_chemberta"
+    cache_dir.mkdir(parents=True)
+    rng = np.random.default_rng(1)
+    np.savez_compressed(
+        cache_dir / "aqsoldb_chemberta.npz",
+        X_target_train=rng.normal(size=(4, 768)).astype(np.float32),
+        y_target_train=np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32),
+        X_source_train=rng.normal(size=(5, 768)).astype(np.float32),
+        y_source_train=np.array([1.1, 1.2, 1.3, 1.4, 1.5], dtype=np.float32),
+        X_target_test=rng.normal(size=(2, 768)).astype(np.float32),
+        y_target_test=np.array([0.5, 0.6], dtype=np.float32),
+        X_source_test=rng.normal(size=(3, 768)).astype(np.float32),
+        y_source_test=np.array([1.6, 1.7, 1.8], dtype=np.float32),
+    )
+
+    train_data, test_data = _load_chemberta_embedding_dataset(
+        "aqsoldb_chemberta",
+        data_dir=str(data_dir),
+    )
+    (X_t_train, y_t_train), (X_s_train, y_s_train) = train_data
+    (X_t_test, y_t_test), (X_s_test, y_s_test) = test_data
+
+    assert X_t_train.shape == (4, 768)
+    assert y_t_train.shape == (4,)
+    assert X_s_train.shape == (5, 768)
+    assert y_s_train.shape == (5,)
+    assert X_t_test.shape == (2, 768)
+    assert y_t_test.shape == (2,)
+    assert X_s_test.shape == (3, 768)
+    assert y_s_test.shape == (3,)
+
+
+def test_load_chemberta_embedding_dataset_missing_cache(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        _load_chemberta_embedding_dataset(
+            "lipophilicity_chemberta",
+            data_dir=str(tmp_path),
+        )
+
+
+def test_embedding_data_dir_resolution(monkeypatch):
+    monkeypatch.setenv("DYNTR_DATA_DIR", "/tmp/dyntr-data")
+    assert _default_data_dir() == "/tmp/dyntr-data"
+
+    monkeypatch.delenv("DYNTR_DATA_DIR")
+    assert _default_data_dir().endswith("dyntr/datasets/data")
 
 
 def test_load_hillstrom_dataset_mocked(monkeypatch):
