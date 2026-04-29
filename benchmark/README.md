@@ -5,12 +5,12 @@
  bash setup.sh
 ```
 
-## 2) Interactive session (to be skipped if you are not on Jean Zhay)
+## 2) Interactive session (to be skipped if you are not on Jean Zay)
 ```bash
 srun --pty -A jcx@v100 -p gpu_p13 --gres=gpu:1 -c 26 --time=02:00:00 bash
 ```
 
-## 2) Submit the benchmark job (compute node via Slurm)
+## 3) Submit the benchmark job (compute node via Slurm)
 ```bash
 bash launcher.sh --run
 ```
@@ -21,3 +21,6 @@ Datasets are bundled in `dyntr/datasets/data.zip` and extracted during `benchmar
 ```bash
 bash ../dyntr/datasets/extract_data.sh
 ```
+
+Set `DYNTR_DATA_DIR` only if those files are stored outside the bundled
+`dyntr/datasets/data` directory.
