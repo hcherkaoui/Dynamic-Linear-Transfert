@@ -1,89 +1,74 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# -----------------------------------------------------------------------------
-# DynTR setup (login node)
-# - Creates/updates the venv in $WORK/venvs/dyntr
-# - Installs dependencies + editable install of the repo
-# -----------------------------------------------------------------------------
+# Prepare the DynTR benchmark environment.
+# By default, large caches and the venv live under $WORK. If WORK is not set,
+# they fall back to a repo-local .dyntr_cache directory.
 
-# --- Colors (auto-disable if not a TTY) --------------------------------------
-if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
-  BOLD="$(tput bold || true)"
-  DIM="$(tput dim || true)"
-  RESET="$(tput sgr0 || true)"
-  RED="$(tput setaf 1 || true)"
-  GREEN="$(tput setaf 2 || true)"
-  YELLOW="$(tput setaf 3 || true)"
-  BLUE="$(tput setaf 4 || true)"
-else
-  BOLD=""; DIM=""; RESET=""
-  RED=""; GREEN=""; YELLOW=""; BLUE=""
-fi
-
-ts() { date +"%Y-%m-%d %H:%M:%S"; }
-info() { echo -e "${BLUE}${BOLD}[$(ts)] [INFO]${RESET} $*"; }
-warn() { echo -e "${YELLOW}${BOLD}[$(ts)] [WARN]${RESET} $*"; }
-die()  { echo -e "${RED}${BOLD}[$(ts)] [ERR ]${RESET} $*" >&2; exit 1; }
+log() { printf '[INFO] %s\n' "$*"; }
+warn() { printf '[WARN] %s\n' "$*" >&2; }
+die() { printf '[ERR ] %s\n' "$*" >&2; exit 1; }
 
 run() {
   local title="$1"; shift
-  info "${BOLD}${title}${RESET}"
-  echo -e "${DIM}cmd:${RESET} $*"
+  log "$title"
   "$@"
-  echo -e "${GREEN}${BOLD}[$(ts)] [DONE]${RESET} ${title}"
-  echo
 }
 
-# --- Guards ------------------------------------------------------------------
-if [[ -z "${WORK:-}" ]]; then
-  WORK="$HOME"
-  warn "WORK not set; defaulting to HOME: $WORK"
-fi
-
-PYTHON_BIN="$(command -v python3.11 || command -v python3 || command -v python || true)"
-[[ -n "$PYTHON_BIN" ]] || die "No python executable found (tried python3.11, python3, python)."
-
-"$PYTHON_BIN" -V >/dev/null 2>&1 || die "Python not usable from PATH."
-
-# --- Paths -------------------------------------------------------------------
-venv_dir="$WORK/venvs/dyntr"
-
-# This script is assumed to live in benchmark/, so repo root is ..
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-info "WORK      = $WORK"
-info "Repo root = $repo_root"
-info "Venv dir  = $venv_dir"
-info "Python    = $PYTHON_BIN"
-echo
-
-# --- Create/activate venv ----------------------------------------------------
-if [[ -d "$venv_dir" ]]; then
-  warn "Venv already exists: $venv_dir (reusing it)"
+if [[ -n "${DYNTR_CACHE_ROOT:-}" ]]; then
+  cache_root="$DYNTR_CACHE_ROOT"
+elif [[ -n "${WORK:-}" ]]; then
+  cache_root="$WORK"
 else
-  run "Create venv" "$PYTHON_BIN" -m venv "$venv_dir"
+  cache_root="${repo_root}/.dyntr_cache"
+  warn "WORK is not set; using ${cache_root}"
 fi
 
-# shellcheck disable=SC1090
+python_bin="$(command -v python3.11 || command -v python3 || command -v python || true)"
+[[ -n "$python_bin" ]] || die "No Python executable found."
+
+venv_dir="${cache_root}/venvs/dyntr"
+export PIP_CACHE_DIR="${cache_root}/.cache/pip"
+export XDG_CACHE_HOME="${cache_root}/.cache"
+export SKLEARN_DATA="${cache_root}/sklearn_data"
+export SCIKIT_LEARN_DATA="$SKLEARN_DATA"
+export DYNTR_DATA_DIR="${DYNTR_DATA_DIR:-${repo_root}/dyntr/datasets/data}"
+
+mkdir -p "$PIP_CACHE_DIR" "$SKLEARN_DATA" "$DYNTR_DATA_DIR"
+
+log "repo_root      = $repo_root"
+log "cache_root     = $cache_root"
+log "venv_dir       = $venv_dir"
+log "DYNTR_DATA_DIR = $DYNTR_DATA_DIR"
+
+if [[ ! -d "$venv_dir" ]]; then
+  run "Create virtual environment" "$python_bin" -m venv "$venv_dir"
+else
+  log "Reusing virtual environment"
+fi
+
+# shellcheck disable=SC1091
 source "$venv_dir/bin/activate"
+venv_python="$(command -v python)"
 
-VENV_PYTHON="$(command -v python)"
-[[ -n "$VENV_PYTHON" ]] || die "Activated venv but could not resolve python."
+run "Upgrade pip tooling" "$venv_python" -m pip install -U pip setuptools wheel
+run "Install requirements" "$venv_python" -m pip install -r "$repo_root/requirements.txt"
+run "Install DynTR editable package" "$venv_python" -m pip install -e "$repo_root"
+run "Ensure joblib" "$venv_python" -m pip install -U joblib
 
-info "Venv python = $VENV_PYTHON"
+run "Extract bundled tabular datasets" env OUT_DIR_OVERRIDE="$DYNTR_DATA_DIR" \
+  bash "$repo_root/dyntr/datasets/extract_data.sh"
 
-run "Upgrade pip/setuptools/wheel" "$VENV_PYTHON" -m pip install -U pip setuptools wheel
+for dataset in lipophilicity_chemberta aqsoldb_chemberta; do
+  npz_path="${DYNTR_DATA_DIR}/${dataset}/${dataset}.npz"
+  [[ -f "$npz_path" ]] || die "Missing precomputed embedding file: $npz_path"
+  log "found $npz_path"
+done
 
-# --- Install deps + editable package ----------------------------------------
-run "Install requirements" "$VENV_PYTHON" -m pip install -r "$repo_root/requirements.txt"
-run "Editable install (pip -e .)" "$VENV_PYTHON" -m pip install -e "$repo_root"
-run "Ensure joblib" "$VENV_PYTHON" -m pip install -U joblib
+run "Download California Housing dataset" "$venv_python" -c \
+  "from sklearn.datasets import fetch_california_housing; fetch_california_housing(); print('california_housing: ok')"
 
-# --- Pre-download datasets ---------------------------------------------------
-run "Extract bundled datasets" bash "$repo_root/dyntr/datasets/extract_data.sh"
-run "Download California Housing dataset" "$VENV_PYTHON" -c "from sklearn.datasets import fetch_california_housing; fetch_california_housing(); print('california_housing: ok')"
-
-# --- Sanity check ------------------------------------------------------------
-run "Sanity import" "$VENV_PYTHON" -c "import dyntr, benchmark; print('dyntr:', dyntr.__file__)"
-info "${GREEN}${BOLD}Setup completed.${RESET}"
+run "Sanity import" "$venv_python" -c "import dyntr, benchmark; print('dyntr:', dyntr.__file__)"
+log "Setup completed."
