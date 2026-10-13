@@ -14,6 +14,7 @@ coverage.xml
 
 # ignore cache dirs
 .cache/
+.dyntr_cache/
 __cache__/
 _cache/
 .pytest_cache/
@@ -40,11 +41,14 @@ figures/
 _figures/
 _merge_figure/
 _merge_figures/
+_results/
 
 # ignore specific dirs
 dist/
 docs/
 .DS_Store/
+.codex/
+.codex
 auto_examples/
 _autosummary/
 generated/
@@ -54,6 +58,8 @@ dyntr.egg-info/
 # ignore example result files
 *.png
 *.pdf
+*.joblib
+runs/
 
 # ignore all type of archived/zipped files
 *.zip

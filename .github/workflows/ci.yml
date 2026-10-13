@@ -19,10 +19,7 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e . --no-deps
-          python -m pip install "numpy<2" numba pandas scikit-learn scipy matplotlib joblib pyyaml
-          python -m pip install pytest pytest-cov
+          python -m pip install -e ".[test]" pytest-cov
       - name: Run tests with coverage
         env:
           MPLBACKEND: Agg
@@ -49,7 +46,7 @@ jobs:
           python -m pip install flake8
       - name: Lint
         run: |
-          flake8 --ignore=E501 --count dyntr benchmark
+          flake8 --ignore=E501 --count dyntr benchmark benchmark_tasks.py scripts
 
   benchmarks:
     runs-on: ubuntu-latest
@@ -64,8 +61,7 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: |
-          cd benchmark
-          bash setup.sh
+          python -m pip install -e .
       - name: Run benchmark smoke
         env:
           MPLBACKEND: Agg
@@ -74,5 +70,5 @@ jobs:
           OPENBLAS_NUM_THREADS: "1"
           NUMEXPR_NUM_THREADS: "1"
         run: |
-          cd benchmark
-          bash launcher.sh --blank
+          python -m benchmark_tasks run bench_01_delta_regr_illus_synth --config benchmark/configs/config-blank.yml --output-dir /tmp/dyntr-results
+          python -m benchmark_tasks plot bench_01_delta_regr_illus_synth --config benchmark/configs/config-blank.yml --output-dir /tmp/dyntr-results

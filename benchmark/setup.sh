@@ -53,10 +53,7 @@ fi
 source "$venv_dir/bin/activate"
 venv_python="$(command -v python)"
 
-run "Upgrade pip tooling" "$venv_python" -m pip install -U pip setuptools wheel
-run "Install requirements" "$venv_python" -m pip install -r "$repo_root/requirements.txt"
 run "Install DynTR editable package" "$venv_python" -m pip install -e "$repo_root"
-run "Ensure joblib" "$venv_python" -m pip install -U joblib
 
 run "Extract bundled tabular datasets" env OUT_DIR_OVERRIDE="$DYNTR_DATA_DIR" \
   bash "$repo_root/dyntr/datasets/extract_data.sh"
@@ -66,9 +63,6 @@ for dataset in lipophilicity_chemberta aqsoldb_chemberta; do
   [[ -f "$npz_path" ]] || die "Missing precomputed embedding file: $npz_path"
   log "found $npz_path"
 done
-
-run "Download California Housing dataset" "$venv_python" -c \
-  "from sklearn.datasets import fetch_california_housing; fetch_california_housing(); print('california_housing: ok')"
 
 run "Sanity import" "$venv_python" -c "import dyntr, benchmark; print('dyntr:', dyntr.__file__)"
 log "Setup completed."

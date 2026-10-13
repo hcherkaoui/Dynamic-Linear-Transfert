@@ -7,13 +7,22 @@ name = "dyntr"
 version = "0.1.dev0"
 description = "DynTR: collaborative learning benchmarks"
 readme = "README.md"
+dynamic = ["dependencies"]
 requires-python = ">=3.11"
-license = { text = "-" }
+license = { text = "MIT" }
 authors = [{ name = "Hamza Cherkaoui", email = "hamza.cherkaoui@telecom-sudparis.eu" }]
-urls = { "Homepage" = "https://github.com/hcherkaoui/lin-dyn-transfert" }
+urls = { "Homepage" = "https://github.com/hcherkaoui/Dynamic-Linear-Transfert" }
+
+[project.optional-dependencies]
+test = ["pytest", "flake8"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools]
 packages = ["dyntr", "dyntr.datasets", "benchmark"]
+py-modules = ["benchmark_tasks"]
 
 [tool.setuptools.package-data]
 "dyntr.datasets" = ["data.zip", "extract_data.sh", "data/**/*"]
+"benchmark" = ["configs/*.yml"]
