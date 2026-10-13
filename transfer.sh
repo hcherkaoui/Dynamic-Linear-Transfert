@@ -65,6 +65,7 @@ prepare_common_staging() {
 
     cd benchmark
     rm -rf _figures
+    rm -rf _results
     cd ..
 
     if find . -type l -print -quit | grep -q .; then

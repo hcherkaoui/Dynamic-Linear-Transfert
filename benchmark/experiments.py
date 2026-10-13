@@ -9,7 +9,7 @@ from typing import List, Tuple, Any, Mapping
 import numpy as np
 from scipy import special
 from dyntr.augmenter import SampleAugmenter
-from dyntr.datasets import synth_regr_data
+from dyntr.datasets import sample_synthetic_noise, synth_regr_data
 from dyntr.datasets._datasets import _generate_thetas
 from dyntr.linear import compute_delta_classif, compute_delta_regr, opt_lambda
 from dyntr.utils import check_random_state
@@ -43,6 +43,7 @@ class Config:
     MODEL_ALPHA: float
     N_JOBS: int
     N_RUNS: int
+    REAL_N_RUNS: int
     JOBLIB_VERBOSE: int
     SEED: int
     L_EPS: np.ndarray
@@ -80,6 +81,7 @@ def get_config(path: str | None = None) -> Config:
 
     plotting = data.get("plotting", {})
     launcher = data.get("launcher", {})
+    real_cfg = data.get("real", {})
     data_cfg = data.get("data", {})
     bench_cfg = data.get("bench", {})
 
@@ -95,6 +97,7 @@ def get_config(path: str | None = None) -> Config:
         MODEL_ALPHA=float(data.get("model", {}).get("alpha", 0.01)),
         N_JOBS=int(launcher.get("n_jobs", 1)),
         N_RUNS=int(launcher.get("n_runs", 1)),
+        REAL_N_RUNS=int(real_cfg.get("n_runs", launcher.get("n_runs", 1))),
         JOBLIB_VERBOSE=int(launcher.get("joblib_verbose", 0)),
         SEED=int(launcher.get("seed", 0)),
         L_EPS=_logspace(data_cfg.get("l_eps", {"start": -3, "stop": 3, "num": 50})),
@@ -160,6 +163,17 @@ def _regen_thetas(theta_t, theta_s, rng):
     return theta_t_new, theta_s_new
 
 
+def _sample_response(X, theta, rng, sigma, noise, lognormal_shape):
+    residuals = sample_synthetic_noise(
+        rng,
+        size=X.shape[0],
+        sigma=sigma,
+        noise=noise,
+        lognormal_shape=lognormal_shape,
+    )
+    return X @ theta + residuals
+
+
 def run_one_delta_illus(
     n_samples_target: int,
     theta_t: np.ndarray,
@@ -179,6 +193,8 @@ def run_one_delta_illus(
     min_n_samples_target: int = 100,
     seed: int | None = None,
     synthetic_data: bool = True,
+    noise: str = "gaussian",
+    lognormal_shape: float = 1.0,
 ) -> List[Tuple[str, str, str, np.ndarray, np.ndarray]]:
     """
     Run the experiment for a vector of source sample sizes and return series for plotting.
@@ -203,6 +219,10 @@ def run_one_delta_illus(
         Random seed.
     synthetic_data : bool
         Flag for synthetic data.
+    noise : {"gaussian", "lognormal"}
+        Synthetic residual distribution used when ``synthetic_data`` is True.
+    lognormal_shape : float
+        Shape parameter for log-normal residuals.
 
     Returns
     -------
@@ -244,10 +264,13 @@ def run_one_delta_illus(
 
     if synthetic_data:
         theta_t, theta_s = _regen_thetas(theta_t, theta_s, rng)
-        y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
-        y_t_val = X_t_val @ theta_t + rng.normal(0.0, sigma_t, size=X_t_val.shape[0])
-        y_t_test = X_t_test @ theta_t + rng.normal(0.0, sigma_t, size=X_t_test.shape[0])
-        l_y_s = [X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0]) for X_s in l_X_s]
+        y_t_train = _sample_response(X_t_train, theta_t, rng, sigma_t, noise, lognormal_shape)
+        y_t_val = _sample_response(X_t_val, theta_t, rng, sigma_t, noise, lognormal_shape)
+        y_t_test = _sample_response(X_t_test, theta_t, rng, sigma_t, noise, lognormal_shape)
+        l_y_s = [
+            _sample_response(X_s, theta_s, rng, sigma_s, noise, lognormal_shape)
+            for X_s in l_X_s
+        ]
     else:
         # For real data, we just shuffle the samples to have variability across runs.
         idx_t = rng.permutation(X_t_train.shape[0])
@@ -362,6 +385,9 @@ def run_one_regr_perf_cmp(
     chunk_size: int = 5,
     seed: int | None = None,
     synthetic_data: bool = True,
+    noise: str = "gaussian",
+    lognormal_shape: float = 1.0,
+    method_names: list[str] | None = None,
 ) -> List[Tuple[str, str, str, np.ndarray]]:
     """Run the experiment for a vector of sample sizes and return series for plotting.
 
@@ -393,6 +419,12 @@ def run_one_regr_perf_cmp(
         Random seed.
     synthetic_data : bool
         Flag for synthetic data.
+    noise : {"gaussian", "lognormal"}
+        Synthetic residual distribution used when ``synthetic_data`` is True.
+    lognormal_shape : float
+        Shape parameter for log-normal residuals.
+    method_names : list of str, optional
+        Method names to evaluate. If omitted, all methods are run.
 
     Returns
     -------
@@ -408,13 +440,19 @@ def run_one_regr_perf_cmp(
 
     rng = check_random_state(seed)
     _, d = l_X_s[0].shape
-    min_n_samples_target = max(2 * d, min_n_samples_target)
+    if synthetic_data:
+        min_n_samples_target = max(2 * d, min_n_samples_target)
+    else:
+        min_n_samples_target = max(1, min_n_samples_target)
     nn_samples_target = np.logspace(
         np.log10(min_n_samples_target),
-        np.log10(n_samples_target + 1),
+        np.log10(n_samples_target),
         num=N_POINTS,
         dtype=int,
     )
+    nn_samples_target = np.unique(nn_samples_target)
+    nn_samples_target[0] = int(min_n_samples_target)
+    nn_samples_target[-1] = int(n_samples_target)
     nn_samples_target = np.unique(nn_samples_target)
 
     # copy to avoid modifying the original data in-place (e.g., shuffling)
@@ -434,10 +472,13 @@ def run_one_regr_perf_cmp(
 
     if synthetic_data:
         theta_t, theta_s = _regen_thetas(theta_t, theta_s, rng)
-        y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
-        y_t_val = X_t_val @ theta_t + rng.normal(0.0, sigma_t, size=X_t_val.shape[0])
-        y_t_test = X_t_test @ theta_t + rng.normal(0.0, sigma_t, size=X_t_test.shape[0])
-        l_y_s = [X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0]) for X_s in l_X_s]
+        y_t_train = _sample_response(X_t_train, theta_t, rng, sigma_t, noise, lognormal_shape)
+        y_t_val = _sample_response(X_t_val, theta_t, rng, sigma_t, noise, lognormal_shape)
+        y_t_test = _sample_response(X_t_test, theta_t, rng, sigma_t, noise, lognormal_shape)
+        l_y_s = [
+            _sample_response(X_s, theta_s, rng, sigma_s, noise, lognormal_shape)
+            for X_s in l_X_s
+        ]
     else:
         # For real data, we just shuffle the samples to have variability across runs.
         idx_t = rng.permutation(X_t_train.shape[0])
@@ -471,6 +512,12 @@ def run_one_regr_perf_cmp(
         ("Chen et al, 2014", _COLORS["chen"], "dotted", _MARKERS["chen"], chen_regr),
         ("Obst et al, 2021", _COLORS["obst"], "dotted", _MARKERS["obst"], obst_regr),
     ]
+    if method_names is not None:
+        method_names = set(method_names)
+        methods = [method for method in methods if method[0] in method_names]
+        if not methods:
+            raise ValueError("method_names did not match any regression methods.")
+
     series = {name: {"err": [], "mse": [], "n_s": []} for name, *_ in methods}
 
     kwargs = dict(
@@ -503,7 +550,7 @@ def run_one_regr_perf_cmp(
                 "color": color,
                 "style": style,
                 "marker": marker,
-                "n_samples": np.array(nn_samples_target + 1),
+                "n_samples": np.array(nn_samples_target),
                 "metric": np.array(series[name][metric_key]),
             }
             for name, color, style, marker, _ in methods
@@ -536,6 +583,8 @@ def run_one_classif_perf_cmp(
     chunk_size: int = 5,
     seed: int | None = None,
     synthetic_data: bool = True,
+    noise: str = "gaussian",
+    lognormal_shape: float = 1.0,
 ) -> List[Tuple[str, str, str, np.ndarray]]:
     """Run the classification experiment for a vector of sample sizes."""
     for X_s in l_X_s:
@@ -574,11 +623,11 @@ def run_one_classif_perf_cmp(
         def _binarize(z):
             return np.where(z >= 0.0, 1.0, -1.0)
 
-        y_t_train = _binarize(X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0]))
-        y_t_val = _binarize(X_t_val @ theta_t + rng.normal(0.0, sigma_t, size=X_t_val.shape[0]))
-        y_t_test = _binarize(X_t_test @ theta_t + rng.normal(0.0, sigma_t, size=X_t_test.shape[0]))
+        y_t_train = _binarize(_sample_response(X_t_train, theta_t, rng, sigma_t, noise, lognormal_shape))
+        y_t_val = _binarize(_sample_response(X_t_val, theta_t, rng, sigma_t, noise, lognormal_shape))
+        y_t_test = _binarize(_sample_response(X_t_test, theta_t, rng, sigma_t, noise, lognormal_shape))
         l_y_s = [
-            _binarize(X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0]))
+            _binarize(_sample_response(X_s, theta_s, rng, sigma_s, noise, lognormal_shape))
             for X_s in l_X_s
         ]
     else:
@@ -662,6 +711,8 @@ def run_one_eps_infl(
     l_eps: float,
     lbda_s: float,
     alpha: float = 0.01,
+    noise: str = "gaussian",
+    lognormal_shape: float = 1.0,
 ) -> List[Tuple[str, str, str, np.ndarray]]:
     """Run the experiment for a vector of sample sizes and return series for plotting.
 
@@ -696,6 +747,8 @@ def run_one_eps_infl(
             sigma_t=SIGMA,
             sigma_s=SIGMA,
             theta_t_and_theta_s=theta_t_and_theta_s,
+            noise=noise,
+            lognormal_shape=lognormal_shape,
         )
         X_t, y_t = data["target_train"]
         X_t_val, y_t_val = data["target_val"]
@@ -744,6 +797,8 @@ def run_one_sigma_infl(
     l_sigma_s: np.ndarray,
     lbda_s: float,
     alpha: float = 0.01,
+    noise: str = "gaussian",
+    lognormal_shape: float = 1.0,
 ) -> List[Tuple[str, str, str, np.ndarray]]:
     """Run the experiment for a vector of sample sizes and return series for plotting.
 
@@ -779,6 +834,8 @@ def run_one_sigma_infl(
             sigma_t=SIGMA,
             sigma_s=sigma_s,
             theta_t_and_theta_s=theta_t_and_theta_s,
+            noise=noise,
+            lognormal_shape=lognormal_shape,
         )
         X_t, y_t = data["target_train"]
         X_t_val, y_t_val = data["target_val"]
@@ -837,6 +894,8 @@ def run_one_lbda_infl(
     alpha: float,
     seed: int | None = None,
     synthetic_data: bool = True,
+    noise: str = "gaussian",
+    lognormal_shape: float = 1.0,
 ) -> List[Tuple[str, str, str, np.ndarray]]:
     """Run the experiment for a vector of sample sizes and return series for plotting."""
     # assert proper dimenssions
@@ -866,11 +925,11 @@ def run_one_lbda_infl(
 
     if synthetic_data:
         theta_t, theta_s = _regen_thetas(theta_t, theta_s, rng)
-        y_t_train = X_t_train @ theta_t + rng.normal(0.0, sigma_t, size=X_t_train.shape[0])
-        y_t_val = X_t_val @ theta_t + rng.normal(0.0, sigma_t, size=X_t_val.shape[0])
-        y_t_test = X_t_test @ theta_t + rng.normal(0.0, sigma_t, size=X_t_test.shape[0])
+        y_t_train = _sample_response(X_t_train, theta_t, rng, sigma_t, noise, lognormal_shape)
+        y_t_val = _sample_response(X_t_val, theta_t, rng, sigma_t, noise, lognormal_shape)
+        y_t_test = _sample_response(X_t_test, theta_t, rng, sigma_t, noise, lognormal_shape)
         l_y_s = [
-            X_s @ theta_s + rng.normal(0.0, sigma_s, size=X_s.shape[0])
+            _sample_response(X_s, theta_s, rng, sigma_s, noise, lognormal_shape)
             for X_s in l_X_s
         ]
     else:

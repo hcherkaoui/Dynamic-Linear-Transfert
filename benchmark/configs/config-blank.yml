@@ -16,6 +16,9 @@ launcher:
   l_eps_regr_mono: [0.5]              # Regr mono-source eps values
   l_eps_regr_multi: [1]               # Regr multi-sources eps values
 
+real:
+  n_runs: 1                           # Real-data Monte Carlo runs
+
 model:
   alpha: 0.01                        # LCB parameter
 

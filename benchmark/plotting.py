@@ -2,10 +2,14 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Tuple
+import warnings
 import matplotlib.pyplot as plt
 from matplotlib import ticker
 import numpy as np
-from experiments import get_config
+if __package__:
+    from .experiments import get_config
+else:
+    from experiments import get_config
 
 PRETTY_RCPARAMS = {
     "font.family": "serif",
@@ -249,9 +253,11 @@ def plot_stats_evol(
             if verbose and not warned_nan:
                 print("[WARN] NaNs detected in values; using nanmean/nanstd.")
                 warned_nan = True
-            mean_stats = np.nanmean(vals, axis=0)
-            if uncertainty:
-                std_stats = np.nanstd(vals, axis=0)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                mean_stats = np.nanmean(vals, axis=0)
+                if uncertainty:
+                    std_stats = np.nanstd(vals, axis=0)
         else:
             mean_stats = np.mean(vals, axis=0)
             if uncertainty:
@@ -379,12 +385,14 @@ def plot_stats_evol(
     # Saving
     if not embedded_plot:
         figures_dir = Path(figures_dir)
+        figures_dir.mkdir(parents=True, exist_ok=True)
         suffix = f"_{filename_suffix}" if filename_suffix else ""
         out_path = figures_dir / f"{filename}{suffix}.pdf"
 
         if verbose:
             print(f"[INFO] Saving figure to '{str(out_path)}'")
         fig.savefig(str(out_path), dpi=300, bbox_inches="tight")
+        plt.close(fig)
 
         return str(out_path)
 
