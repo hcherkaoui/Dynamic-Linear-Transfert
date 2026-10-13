@@ -11,23 +11,173 @@ from ..utils import check_random_state
 
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
-CHEMBERTA_EMBEDDING_DATASETS = {
+EMBEDDING_REGRESSION_METADATA_KEYS = (
+    "filename",
+    "n_samples",
+    "d",
+    "target",
+    "feature_type",
+    "source",
+    "default_split",
+    "description",
+)
+
+EMBEDDING_REGRESSION_DATASETS = {
     "lipophilicity_chemberta": {
         "filename": "lipophilicity_chemberta.npz",
         "n_samples": 4200,
         "d": 768,
         "target": "logD",
+        "feature_type": "ChemBERTa embedding",
+        "source": "MoleculeNet Lipophilicity",
+        "default_split": "precomputed target/source split",
+        "description": "Molecular lipophilicity regression with ChemBERTa embeddings.",
     },
     "aqsoldb_chemberta": {
         "filename": "aqsoldb_chemberta.npz",
         "n_samples": 9982,
         "d": 768,
         "target": "LogS",
+        "feature_type": "ChemBERTa embedding",
+        "source": "AqSolDB",
+        "default_split": "precomputed target/source split",
+        "description": "Aqueous solubility regression with ChemBERTa embeddings.",
+    },
+    "moleculenet_lipo_ecfp": {
+        "filename": "moleculenet_lipo_ecfp.npz",
+        "n_samples": 4200,
+        "d": 2048,
+        "target": "logD",
+        "feature_type": "ECFP fingerprint",
+        "source": "MoleculeNet Lipophilicity",
+        "default_split": "DeepChem scaffold split train/source and validation+test/target",
+        "description": "Molecular lipophilicity regression with ECFP fingerprints.",
+    },
+    "moleculenet_esol_ecfp": {
+        "filename": "moleculenet_esol_ecfp.npz",
+        "n_samples": 1128,
+        "d": 2048,
+        "target": "solubility",
+        "feature_type": "ECFP fingerprint",
+        "source": "MoleculeNet ESOL",
+        "default_split": "DeepChem scaffold split train/source and validation+test/target",
+        "description": "Aqueous solubility regression with ECFP fingerprints.",
+    },
+    "moleculenet_freesolv_ecfp": {
+        "filename": "moleculenet_freesolv_ecfp.npz",
+        "n_samples": 642,
+        "d": 2048,
+        "target": "hydration free energy",
+        "feature_type": "ECFP fingerprint",
+        "source": "MoleculeNet FreeSolv",
+        "default_split": "DeepChem scaffold split train/source and validation+test/target",
+        "description": "Hydration free energy regression with ECFP fingerprints.",
+    },
+    "tape_fluorescence_esm2": {
+        "filename": "tape_fluorescence_esm2.npz",
+        "n_samples": None,
+        "d": 1280,
+        "target": "fluorescence",
+        "feature_type": "ESM-2 sequence embedding",
+        "source": "SaProtHub/Dataset-Fluorescence-TAPE",
+        "default_split": "official split when available, otherwise deterministic random split",
+        "description": "Protein fluorescence regression with ESM-2 sequence embeddings.",
+    },
+    "tape_stability_esm2": {
+        "filename": "tape_stability_esm2.npz",
+        "n_samples": None,
+        "d": 1280,
+        "target": "stability",
+        "feature_type": "ESM-2 sequence embedding",
+        "source": "SaProtHub/Dataset-Stability-TAPE",
+        "default_split": "official split when available, otherwise deterministic random split",
+        "description": "Protein stability regression with ESM-2 sequence embeddings.",
+    },
+    "amazon_reviews_sentence": {
+        "filename": "amazon_reviews_sentence.npz",
+        "n_samples": None,
+        "d": 384,
+        "target": "star rating",
+        "feature_type": "sentence-transformer embedding",
+        "source": "McAuley-Lab/Amazon-Reviews-2023",
+        "default_split": "domain split when requested, otherwise deterministic random split",
+        "description": "Amazon review rating regression with sentence-transformer embeddings.",
+    },
+    "yelp_reviews_sentence": {
+        "filename": "yelp_reviews_sentence.npz",
+        "n_samples": None,
+        "d": 384,
+        "target": "star rating",
+        "feature_type": "sentence-transformer embedding",
+        "source": "local Yelp JSON files",
+        "default_split": "domain split when requested, otherwise deterministic random split",
+        "description": "Yelp review rating regression with sentence-transformer embeddings.",
+    },
+    "e2006_tfidf_svd512": {
+        "filename": "e2006_tfidf_svd512.npz",
+        "n_samples": None,
+        "d": 512,
+        "target": "E2006 regression target",
+        "feature_type": "TF-IDF + TruncatedSVD",
+        "source": "LIBSVM E2006 regression",
+        "default_split": "E2006.train/source and E2006.test/target with internal train/test split",
+        "description": "Dense 512-dimensional SVD cache for sparse E2006 TF-IDF regression.",
+    },
+    "gdsc1_expression_fingerprint": {
+        "filename": "gdsc1_expression_fingerprint.npz",
+        "n_samples": None,
+        "d": None,
+        "target": "IC50 or drug response",
+        "feature_type": "Morgan fingerprint plus cell-line features",
+        "source": "TDC DrugRes GDSC1",
+        "default_split": "domain split when requested, otherwise deterministic random split",
+        "description": (
+            "GDSC1 drug-response regression with drug fingerprints and "
+            "cell-line features."
+        ),
+    },
+    "gdsc2_expression_fingerprint": {
+        "filename": "gdsc2_expression_fingerprint.npz",
+        "n_samples": None,
+        "d": None,
+        "target": "IC50 or drug response",
+        "feature_type": "Morgan fingerprint plus cell-line features",
+        "source": "TDC DrugRes GDSC2",
+        "default_split": "domain split when requested, otherwise deterministic random split",
+        "description": (
+            "GDSC2 drug-response regression with drug fingerprints and "
+            "cell-line features."
+        ),
     },
 }
 
+CHEMBERTA_EMBEDDING_DATASETS = {
+    key: value
+    for key, value in EMBEDDING_REGRESSION_DATASETS.items()
+    if key.endswith("_chemberta")
+}
+
+
+def _validate_embedding_regression_registry():
+    """Validate embedding-regression registry metadata."""
+    for name, spec in EMBEDDING_REGRESSION_DATASETS.items():
+        missing = [
+            key
+            for key in EMBEDDING_REGRESSION_METADATA_KEYS
+            if key not in spec
+        ]
+        if missing:
+            raise ValueError(
+                f"Embedding-regression dataset '{name}' is missing metadata "
+                f"fields: {missing}."
+            )
+
+
+_validate_embedding_regression_registry()
+
 
 def _default_data_dir() -> str:
+    """Return the configured dataset cache directory."""
     data_dir = os.environ.get("DYNTR_DATA_DIR")
     if data_dir:
         return data_dir
@@ -68,6 +218,7 @@ def _bootstrap_sources(
     n_sources: int,
     rng: np.random.Generator,
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """Bootstrap source arrays into one or more source datasets."""
     if n_sources == 1:
         return [X.copy()], [y.copy()]
     l_X = []
@@ -265,12 +416,12 @@ def _load_hillstrom_dataset(
     return train_data, test_data
 
 
-def _load_chemberta_embedding_dataset(
+def _load_embedding_regression_dataset(
     dataset_name: str,
     data_dir=None,
 ):
     """
-    Load a molecular-regression dataset from precomputed ChemBERTa embeddings.
+    Load an embedding-regression dataset from a precomputed npz cache.
 
     The npz file is expected under ``DYNTR_DATA_DIR`` when set, otherwise under
     the bundled ``dyntr/datasets/data`` directory. It must contain keys:
@@ -285,20 +436,21 @@ def _load_chemberta_embedding_dataset(
     test_data : tuple
         ((X_target_test, y_target_test), (X_source_test, y_source_test))
     """
-    if dataset_name not in CHEMBERTA_EMBEDDING_DATASETS:
+    if dataset_name not in EMBEDDING_REGRESSION_DATASETS:
         raise ValueError(
-            f"Unknown ChemBERTa embedding dataset '{dataset_name}'. "
-            f"Valid values: {sorted(CHEMBERTA_EMBEDDING_DATASETS)}"
+            f"Unknown embedding-regression dataset '{dataset_name}'. "
+            f"Valid values: {sorted(EMBEDDING_REGRESSION_DATASETS)}"
         )
 
-    spec = CHEMBERTA_EMBEDDING_DATASETS[dataset_name]
+    spec = EMBEDDING_REGRESSION_DATASETS[dataset_name]
     data_dir = _default_data_dir() if data_dir is None else data_dir
     path = os.path.join(data_dir, dataset_name, spec["filename"])
     if not os.path.exists(path):
         raise FileNotFoundError(
-            f"Precomputed embeddings not found at {path}. "
-            "Ship the corresponding npz file under dyntr/datasets/data, "
-            "or set DYNTR_DATA_DIR to the directory containing the dataset folders."
+            f"Embedding-regression cache for dataset '{dataset_name}' was not "
+            f"found. Expected cache file: {path}. Set DYNTR_DATA_DIR to the "
+            "directory containing dataset folders, or place the cache under "
+            "dyntr/datasets/data/<dataset_name>/."
         )
 
     required = (
@@ -314,7 +466,12 @@ def _load_chemberta_embedding_dataset(
     with np.load(path, allow_pickle=False) as cache:
         missing = [key for key in required if key not in cache]
         if missing:
-            raise ValueError(f"Embedding cache {path} is missing keys: {missing}")
+            present = sorted(str(key) for key in cache.files)
+            raise ValueError(
+                f"Embedding-regression cache for dataset '{dataset_name}' at "
+                f"{path} is missing keys required by the .npz cache: {missing}. "
+                f"Required keys are: {list(required)}. Present keys are: {present}."
+            )
 
         arrays = {key: np.asarray(cache[key]) for key in required}
 
@@ -330,10 +487,11 @@ def _load_chemberta_embedding_dataset(
                 f"X_{prefix} and y_{prefix} have incompatible lengths: "
                 f"{X.shape[0]} and {y.shape[0]}."
             )
-        if X.shape[1] != spec["d"]:
+        if spec["d"] is not None and X.shape[1] != spec["d"]:
             raise ValueError(
-                f"X_{prefix} must have ChemBERTa dimension {spec['d']}, "
-                f"got {X.shape[1]}."
+                f"Embedding-regression cache for dataset '{dataset_name}' has "
+                f"wrong embedding dimension in X_{prefix}: expected d={spec['d']} "
+                f"from the registry, got {X.shape[1]}."
             )
         if not np.isfinite(X).all() or not np.isfinite(y).all():
             raise ValueError(f"X_{prefix} and y_{prefix} must contain finite values.")
@@ -351,12 +509,21 @@ def _load_chemberta_embedding_dataset(
     return train_data, test_data
 
 
+def _load_chemberta_embedding_dataset(
+    dataset_name: str,
+    data_dir=None,
+):
+    """Load a ChemBERTa embedding dataset through the generic cache loader."""
+    return _load_embedding_regression_dataset(dataset_name, data_dir=data_dir)
+
+
 def _guess_column(
     df: pd.DataFrame,
     candidates: Iterable[str],
     required=True,
     case_insensitive=True,
 ) -> Optional[str]:
+    """Guess a dataframe column from candidate names."""
     cols = list(df.columns)
     if case_insensitive:
         lower = {c.lower(): c for c in cols}
@@ -378,6 +545,7 @@ def _guess_column(
 
 
 def _autodetect_user_id(purchases: pd.DataFrame, survey: pd.DataFrame) -> str:
+    """Detect a likely shared user identifier column."""
     id_candidates = [
         "user_id",
         "userid",
